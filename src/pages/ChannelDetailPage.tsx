@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { Music, Video, FileText, Image, Folder, Play, Plus, ChevronRight, Download } from 'lucide-react';
 import { Header } from '@/components/layout/Header';

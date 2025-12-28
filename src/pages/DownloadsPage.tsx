@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Download, Music, Trash2, HardDrive, X, RotateCcw, Play, Pause } from 'lucide-react';
+import { Download, Music, Trash2, HardDrive, X, RotateCcw, Play } from 'lucide-react';
 import { Header } from '@/components/layout/Header';
 import { Button } from '@/components/common/Button';
 import { LoadingScreen } from '@/components/common/Spinner';
@@ -97,8 +97,8 @@ export function DownloadsPage() {
     play({
       fileId: track.id,
       messageId: 0,
-      channelId: track.channelId,
-      channelName: track.channelName,
+      channelId: track.channelId || '',
+      channelName: track.channelName || '',
       fileName: track.fileName,
       filePath: '',
       fileType: 'Audio',
@@ -106,7 +106,7 @@ export function DownloadsPage() {
       order: 0,
       dateAdded: track.cachedAt.toISOString(),
       isLocalFile: true,
-      streamUrl: track.streamUrl,
+      streamUrl: track.streamUrl || '',
       title: track.title || track.fileName.replace(/\.[^/.]+$/, ''),
       artist: track.artist,
       album: track.album,
