@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Star, Radio, FolderOpen, ChevronRight } from 'lucide-react';
+import { Search, Star, Radio, FolderOpen, ChevronRight, HardDrive } from 'lucide-react';
 import { Header } from '@/components/layout/Header';
 import { Input } from '@/components/common/Input';
 import { LoadingScreen } from '@/components/common/Spinner';
@@ -8,7 +8,7 @@ import { channelsApi } from '@/services/api/channels.api';
 import { useUiStore } from '@/stores/uiStore';
 import type { Channel, ChannelFolder } from '@/types/models';
 
-type Tab = 'all' | 'favorites' | 'folders';
+type Tab = 'all' | 'favorites' | 'folders' | 'local';
 
 export function ChannelsPage() {
   const navigate = useNavigate();
@@ -72,7 +72,8 @@ export function ChannelsPage() {
   const tabs: { key: Tab; label: string }[] = [
     { key: 'all', label: 'All' },
     { key: 'favorites', label: 'Favorites' },
-    { key: 'folders', label: 'Folders' }
+    { key: 'folders', label: 'Folders' },
+    { key: 'local', label: 'Local' }
   ];
 
   return (
@@ -123,12 +124,14 @@ export function ChannelsPage() {
             onSelect={(ch) => navigate(`/channels/${ch.id}`)}
             emptyMessage="No favorite channels yet"
           />
-        ) : (
+        ) : activeTab === 'folders' ? (
           <FoldersList
             folders={folders}
             ungroupedChannels={ungroupedChannels}
             onSelectChannel={(ch) => navigate(`/channels/${ch.id}`)}
           />
+        ) : (
+          <LocalFilesEntry onNavigate={() => navigate('/local')} />
         )}
       </div>
     </div>
@@ -192,6 +195,32 @@ interface FoldersListProps {
   folders: ChannelFolder[];
   ungroupedChannels: Channel[];
   onSelectChannel: (channel: Channel) => void;
+}
+
+interface LocalFilesEntryProps {
+  onNavigate: () => void;
+}
+
+function LocalFilesEntry({ onNavigate }: LocalFilesEntryProps) {
+  return (
+    <div className="p-4">
+      <button
+        onClick={onNavigate}
+        className="w-full flex items-center gap-4 p-6 bg-slate-800 rounded-xl hover:bg-slate-700 transition-colors"
+      >
+        <div className="w-14 h-14 bg-emerald-500/20 rounded-xl flex items-center justify-center">
+          <HardDrive className="w-7 h-7 text-emerald-400" />
+        </div>
+        <div className="flex-1 text-left">
+          <p className="font-medium text-white text-lg">Local Files</p>
+          <p className="text-sm text-slate-400">
+            Browse files from server's local storage
+          </p>
+        </div>
+        <ChevronRight className="w-6 h-6 text-slate-500" />
+      </button>
+    </div>
+  );
 }
 
 function FoldersList({ folders, ungroupedChannels, onSelectChannel }: FoldersListProps) {

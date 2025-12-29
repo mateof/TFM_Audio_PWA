@@ -6,6 +6,7 @@ import { AppShell } from '@/components/layout/AppShell';
 import { SetupPage } from '@/pages/SetupPage';
 import { ChannelsPage } from '@/pages/ChannelsPage';
 import { ChannelDetailPage } from '@/pages/ChannelDetailPage';
+import { LocalFilesPage } from '@/pages/LocalFilesPage';
 import { PlaylistsPage } from '@/pages/PlaylistsPage';
 import { PlaylistDetailPage } from '@/pages/PlaylistDetailPage';
 import { PlayerPage } from '@/pages/PlayerPage';
@@ -62,6 +63,7 @@ function AppContent() {
           <Route element={<AppShell />}>
             <Route path="/channels" element={<ChannelsPage />} />
             <Route path="/channels/:id" element={<ChannelDetailPage />} />
+            <Route path="/local" element={<LocalFilesPage />} />
             <Route path="/playlists" element={<PlaylistsPage />} />
             <Route path="/playlists/:id" element={<PlaylistDetailPage />} />
             <Route path="/downloads" element={<DownloadsPage />} />

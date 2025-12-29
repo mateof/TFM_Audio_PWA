@@ -1,17 +1,16 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { useParams, useSearchParams } from 'react-router-dom';
-import { Music, Folder, Play, Plus, ChevronRight, Download, Search, SlidersHorizontal, X, Loader2, Check } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
+import { Music, Folder, Play, Plus, ChevronRight, Download, Search, SlidersHorizontal, X, Loader2, Check, HardDrive } from 'lucide-react';
 import { Header } from '@/components/layout/Header';
 import { LoadingScreen } from '@/components/common/Spinner';
 import { PlaylistPicker } from '@/components/playlists/PlaylistPicker';
-import { channelsApi } from '@/services/api/channels.api';
+import { localFilesApi } from '@/services/api/localFiles.api';
 import { useAudioPlayer } from '@/hooks/useAudioPlayer';
 import { useUiStore } from '@/stores/uiStore';
 import { formatFileSize } from '@/utils/format';
-import { buildStreamUrlSync } from '@/services/api/client';
 import { downloadManager, useDownloadStore } from '@/services/download/DownloadManager';
 import { cacheService } from '@/services/cache/CacheService';
-import type { ChannelDetail, ChannelFile, Track } from '@/types/models';
+import type { ChannelFile, Track } from '@/types/models';
 
 const PAGE_SIZE = 50;
 
@@ -23,32 +22,27 @@ const categoryIcons: Record<string, React.ReactNode> = {
   Folder: <Folder className="w-5 h-5" />
 };
 
-// Convert ChannelFile to Track
-function fileToTrack(file: ChannelFile, channelId: string, channelName: string): Track {
+// Convert ChannelFile to Track for local files
+async function fileToTrack(file: ChannelFile): Promise<Track> {
+  const streamUrl = await localFilesApi.getStreamUrl(file.path);
   return {
     fileId: file.id,
-    messageId: file.messageId,
-    channelId: channelId,
-    channelName: channelName,
+    messageId: 0,
+    channelId: 'local',
+    channelName: 'Local Files',
     fileName: file.name,
     filePath: file.path,
     fileType: file.type,
     fileSize: file.size,
     order: 0,
     dateAdded: file.dateCreated,
-    isLocalFile: false,
-    streamUrl: file.streamUrl || buildStreamUrlSync(channelId, file.id, file.name),
+    isLocalFile: true,
+    streamUrl: streamUrl,
     title: file.name.replace(/\.[^/.]+$/, '')
   };
 }
 
-interface FolderBreadcrumb {
-  id: string;
-  name: string;
-}
-
-export function ChannelDetailPage() {
-  const { id } = useParams<{ id: string }>();
+export function LocalFilesPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { addToast } = useUiStore();
   const { play } = useAudioPlayer();
@@ -57,9 +51,9 @@ export function ChannelDetailPage() {
   // State
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [channel, setChannel] = useState<ChannelDetail | null>(null);
   const [files, setFiles] = useState<ChannelFile[]>([]);
-  const [folderPath, setFolderPath] = useState<FolderBreadcrumb[]>([]);
+  const [currentPath, setCurrentPath] = useState('');
+  const [parentPath, setParentPath] = useState<string | null>(null);
   const [selectedTrack, setSelectedTrack] = useState<Track | null>(null);
   const [cachedTrackIds, setCachedTrackIds] = useState<Set<string>>(new Set());
 
@@ -80,87 +74,18 @@ export function ChannelDetailPage() {
   const listRef = useRef<HTMLDivElement>(null);
   const loadingRef = useRef(false);
 
-  // Get current folder ID from URL params
-  const currentFolderId = searchParams.get('folder') || undefined;
-  const folderPathParam = searchParams.get('path');
-
-  // Refresh cache status when downloads complete
-  useEffect(() => {
-    if (!files.length) return;
-
-    const audioFiles = files.filter(f => f.category === 'Audio');
-    if (audioFiles.length === 0) return;
-
-    const interval = setInterval(async () => {
-      // Only refresh if there are active downloads for files in this view
-      const hasActiveDownloads = audioFiles.some(f => activeDownloads.has(f.id));
-      if (hasActiveDownloads || activeDownloads.size > 0) {
-        const newCachedIds = new Set(cachedTrackIds);
-        for (const file of audioFiles) {
-          const isCached = await cacheService.isTrackCached(file.id);
-          if (isCached) newCachedIds.add(file.id);
-        }
-        setCachedTrackIds(newCachedIds);
-      }
-    }, 2000);
-
-    return () => clearInterval(interval);
-  }, [files, activeDownloads.size]);
-
-  // Initialize folder path from URL
-  useEffect(() => {
-    if (folderPathParam) {
-      try {
-        const parsed = JSON.parse(decodeURIComponent(folderPathParam));
-        setFolderPath(parsed);
-      } catch {
-        setFolderPath([]);
-      }
-    } else {
-      setFolderPath([]);
-    }
-  }, [folderPathParam]);
-
-  // Reset pagination when folder or filter changes (but NOT for sort - useMemo handles that)
-  useEffect(() => {
-    setCurrentPage(1);
-    setFiles([]);
-    setHasMore(true);
-  }, [currentFolderId, filterMode, searchText]);
-
-  // Load channel info
-  useEffect(() => {
-    if (id) {
-      loadChannel();
-    }
-  }, [id]);
-
-  // Load files when parameters change (sort is handled client-side via useMemo)
-  useEffect(() => {
-    if (id) {
-      loadFiles(1, true);
-    }
-  }, [id, currentFolderId, filterMode, searchText]);
-
-  const loadChannel = async () => {
-    try {
-      const data = await channelsApi.getInfo(parseInt(id!));
-      setChannel(data);
-    } catch (error) {
-      addToast('Failed to load channel', 'error');
-      console.error(error);
-    }
-  };
+  // Get current path from URL params
+  const pathParam = searchParams.get('path') || '';
 
   // Audio extensions for client-side filtering
   const audioExtensions = ['mp3', 'flac', 'wav', 'ogg', 'opus', 'aac', 'm4a', 'wma', 'ape'];
   const isExtensionFilter = audioExtensions.includes(filterMode);
 
-  // Get the API filter value (send 'audio' for extension filters)
+  // Get the API filter value
   const getApiFilter = (): string | undefined => {
     if (filterMode === 'audio_folders') return 'audio_folders';
     if (filterMode === 'audio' || isExtensionFilter) return 'audio';
-    return 'audio_folders'; // Default to audio + folders
+    return 'audio_folders';
   };
 
   // Filter files by extension on the client side
@@ -178,7 +103,6 @@ export function ChannelDetailPage() {
   const sortFilesBy = useCallback((filesToSort: ChannelFile[], sort: SortBy, desc: boolean): ChannelFile[] => {
     const sorted = [...filesToSort];
 
-    // Always put folders first, then sort within each group
     sorted.sort((a, b) => {
       // Folders first
       if (a.category === 'Folder' && b.category !== 'Folder') return -1;
@@ -208,10 +132,43 @@ export function ChannelDetailPage() {
     return sorted;
   }, []);
 
-  // Compute sorted files for display - re-sorts whenever sortBy/sortDesc changes
+  // Compute sorted files for display
   const displayFiles = useMemo(() => {
     return sortFilesBy(files, sortBy, sortDesc);
   }, [files, sortBy, sortDesc, sortFilesBy]);
+
+  // Reset pagination when path or filter changes
+  useEffect(() => {
+    setCurrentPage(1);
+    setFiles([]);
+    setHasMore(true);
+  }, [pathParam, filterMode, searchText]);
+
+  // Load files when parameters change
+  useEffect(() => {
+    loadFiles(1, true);
+  }, [pathParam, filterMode, searchText]);
+
+  // Refresh cache status when downloads complete
+  useEffect(() => {
+    if (!files.length) return;
+
+    const audioFiles = files.filter(f => f.category === 'Audio');
+    if (audioFiles.length === 0) return;
+
+    const interval = setInterval(async () => {
+      if (activeDownloads.size > 0) {
+        const newCachedIds = new Set(cachedTrackIds);
+        for (const file of audioFiles) {
+          const isCached = await cacheService.isTrackCached(file.id);
+          if (isCached) newCachedIds.add(file.id);
+        }
+        setCachedTrackIds(newCachedIds);
+      }
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, [files, activeDownloads.size]);
 
   const loadFiles = async (page: number, reset: boolean = false) => {
     if (loadingRef.current) return;
@@ -224,26 +181,25 @@ export function ChannelDetailPage() {
     }
 
     try {
-      const { files: data, totalCount: total } = await channelsApi.getFiles(
-        parseInt(id!),
-        currentFolderId,
-        {
-          page,
-          pageSize: PAGE_SIZE,
-          filter: getApiFilter(),
-          search: searchText || undefined,
-          sortBy,
-          sortDesc
-        }
-      );
+      const result = await localFilesApi.getFiles(pathParam, {
+        page,
+        pageSize: PAGE_SIZE,
+        filter: getApiFilter(),
+        search: searchText || undefined,
+        sortBy,
+        sortDesc
+      });
 
-      // Apply client-side extension filtering (sorting is done via useMemo)
-      const filteredData = filterByExtension(data);
+      // Apply client-side extension filtering
+      const filteredData = filterByExtension(result.files);
+
+      setCurrentPath(result.currentPath);
+      setParentPath(result.parentPath);
 
       if (reset) {
         setFiles(filteredData);
-        setTotalCount(total);
-        setHasMore(data.length >= PAGE_SIZE);
+        setTotalCount(result.totalCount);
+        setHasMore(result.files.length >= PAGE_SIZE);
         setCurrentPage(page);
       } else {
         // For pagination, deduplicate files by ID before appending
@@ -251,14 +207,13 @@ export function ChannelDetailPage() {
         const existingIds = new Set(currentFiles.map(f => f.id));
         const newUniqueFiles = filteredData.filter(f => !existingIds.has(f.id));
 
-        // If no new unique files, stop loading more (we've reached the end or server is returning duplicates)
+        // If no new unique files, stop loading more
         if (newUniqueFiles.length === 0) {
           console.log('No new unique files, stopping pagination');
           setHasMore(false);
         } else {
           setFiles([...currentFiles, ...newUniqueFiles]);
-          // Only continue if we got a full page AND some new files
-          setHasMore(data.length >= PAGE_SIZE && newUniqueFiles.length > 0);
+          setHasMore(result.files.length >= PAGE_SIZE && newUniqueFiles.length > 0);
           setCurrentPage(page);
         }
       }
@@ -286,7 +241,7 @@ export function ChannelDetailPage() {
     if (!listRef.current || loadingMore || !hasMore) return;
 
     const { scrollTop, scrollHeight, clientHeight } = listRef.current;
-    const threshold = 200; // px from bottom
+    const threshold = 200;
 
     if (scrollHeight - scrollTop - clientHeight < threshold) {
       loadFiles(currentPage + 1, false);
@@ -303,65 +258,53 @@ export function ChannelDetailPage() {
 
   const handleFileClick = (file: ChannelFile) => {
     if (file.category === 'Folder') {
-      const newPath = [...folderPath, { id: file.id, name: file.name }];
       const params = new URLSearchParams(searchParams);
-      params.set('folder', file.id);
-      params.set('path', encodeURIComponent(JSON.stringify(newPath)));
+      params.set('path', file.path);
       setSearchParams(params);
     } else if (file.category === 'Audio') {
       playAudioFile(file);
     }
   };
 
-  const navigateToFolder = (index: number) => {
-    const params = new URLSearchParams(searchParams);
-
-    if (index === -1) {
-      params.delete('folder');
-      params.delete('path');
-    } else {
-      const newPath = folderPath.slice(0, index + 1);
-      params.set('folder', newPath[newPath.length - 1].id);
-      params.set('path', encodeURIComponent(JSON.stringify(newPath)));
+  const navigateToParent = () => {
+    if (parentPath !== null) {
+      const params = new URLSearchParams(searchParams);
+      if (parentPath) {
+        params.set('path', parentPath);
+      } else {
+        params.delete('path');
+      }
+      setSearchParams(params);
     }
-
-    setSearchParams(params);
   };
 
-  const playAudioFile = (file: ChannelFile) => {
-    if (!channel) return;
-
+  const playAudioFile = async (file: ChannelFile) => {
     const audioFiles = displayFiles.filter(f => f.category === 'Audio');
-    const tracks = audioFiles.map(f => fileToTrack(f, id!, channel.name));
+    const tracks = await Promise.all(audioFiles.map(f => fileToTrack(f)));
     const startIndex = audioFiles.findIndex(f => f.id === file.id);
-
-    const track = fileToTrack(file, id!, channel.name);
+    const track = await fileToTrack(file);
     play(track, tracks, startIndex >= 0 ? startIndex : 0);
   };
 
-  const playAllAudio = () => {
-    if (!channel) return;
+  const playAllAudio = async () => {
     const audioFiles = displayFiles.filter(f => f.category === 'Audio');
     if (audioFiles.length === 0) {
       addToast('No audio files to play', 'info');
       return;
     }
-    const tracks = audioFiles.map(f => fileToTrack(f, id!, channel.name));
+    const tracks = await Promise.all(audioFiles.map(f => fileToTrack(f)));
     play(tracks[0], tracks, 0);
   };
 
-  const handleAddToPlaylist = (file: ChannelFile, e: React.MouseEvent) => {
+  const handleAddToPlaylist = async (file: ChannelFile, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!channel) return;
-    const track = fileToTrack(file, id!, channel.name);
+    const track = await fileToTrack(file);
     setSelectedTrack(track);
   };
 
   const handleDownload = async (file: ChannelFile, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!channel) return;
-
-    const track = fileToTrack(file, id!, channel.name);
+    const track = await fileToTrack(file);
     await downloadManager.addToQueue(track);
     addToast('Added to download queue', 'info');
   };
@@ -387,11 +330,14 @@ export function ChannelDetailPage() {
     { key: 'type', label: 'Type' }
   ];
 
+  // Get folder name from path
+  const folderName = currentPath ? currentPath.split(/[/\\]/).pop() || 'Local Files' : 'Local Files';
+
   return (
     <div className="flex flex-col h-screen">
       <Header
-        title={channel?.name || 'Channel'}
-        subtitle={channel ? `${totalCount} files` : undefined}
+        title={folderName}
+        subtitle={`${totalCount} files`}
         showBack
       />
 
@@ -522,26 +468,18 @@ export function ChannelDetailPage() {
         </div>
       )}
 
-      {/* Breadcrumb */}
-      {folderPath.length > 0 && (
-        <div className="flex items-center gap-2 px-4 py-2 text-sm overflow-x-auto no-scrollbar bg-slate-800/50">
+      {/* Breadcrumb / Parent navigation */}
+      {pathParam && (
+        <div className="flex items-center gap-2 px-4 py-2 text-sm bg-slate-800/50 border-b border-slate-700">
           <button
-            onClick={() => navigateToFolder(-1)}
-            className="text-emerald-400 hover:underline whitespace-nowrap"
+            onClick={navigateToParent}
+            className="flex items-center gap-2 text-emerald-400 hover:underline"
           >
-            Root
+            <HardDrive className="w-4 h-4" />
+            <span>← Back</span>
           </button>
-          {folderPath.map((folder, index) => (
-            <div key={folder.id} className="flex items-center gap-2">
-              <ChevronRight className="w-4 h-4 text-slate-500 flex-shrink-0" />
-              <button
-                onClick={() => navigateToFolder(index)}
-                className={`whitespace-nowrap ${index === folderPath.length - 1 ? 'text-white' : 'text-emerald-400 hover:underline'}`}
-              >
-                {folder.name}
-              </button>
-            </div>
-          ))}
+          <span className="text-slate-500">|</span>
+          <span className="text-slate-400 truncate">{currentPath}</span>
         </div>
       )}
 

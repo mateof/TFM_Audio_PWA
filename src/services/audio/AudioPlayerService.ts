@@ -63,6 +63,14 @@ class AudioPlayerService {
 
     this.audio.addEventListener('loadedmetadata', () => {
       store().setDuration(this.audio.duration);
+      // Update MediaSession with correct duration
+      this.updatePositionState();
+    });
+
+    this.audio.addEventListener('durationchange', () => {
+      store().setDuration(this.audio.duration);
+      // Update MediaSession when duration changes
+      this.updatePositionState();
     });
 
     this.audio.addEventListener('canplay', () => {
@@ -185,16 +193,27 @@ class AudioPlayerService {
   }
 
   private updatePositionState() {
-    if (!this.mediaSessionEnabled || !this.audio.duration) return;
+    if (!this.mediaSessionEnabled) return;
+
+    const duration = this.audio.duration;
+    const position = this.audio.currentTime;
+    const playbackRate = this.audio.playbackRate;
+
+    // Only update if we have valid finite values
+    if (!isFinite(duration) || duration <= 0) return;
+    if (!isFinite(position) || position < 0) return;
+
+    // Ensure position doesn't exceed duration (can cause issues)
+    const safePosition = Math.min(position, duration);
 
     try {
       navigator.mediaSession.setPositionState({
-        duration: this.audio.duration,
-        playbackRate: this.audio.playbackRate,
-        position: this.audio.currentTime
+        duration: duration,
+        playbackRate: playbackRate || 1,
+        position: safePosition
       });
     } catch (e) {
-      // Ignore errors (can happen if duration is not finite)
+      // Ignore errors (can happen with invalid values)
     }
   }
 

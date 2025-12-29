@@ -79,6 +79,12 @@ class ApiClient {
 
 export const apiClient = new ApiClient();
 
+// Get base URL for API calls
+export async function buildBaseUrl(): Promise<string> {
+  await apiClient.getClient();
+  return apiClient.getBaseUrl();
+}
+
 // Build stream URL for a track (Telegram File Manager files)
 export async function buildStreamUrl(channelId: string, fileId: string, fileName?: string): Promise<string> {
   // Ensure client is initialized to get baseUrl
