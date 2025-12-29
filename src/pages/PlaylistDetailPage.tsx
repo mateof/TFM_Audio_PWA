@@ -38,6 +38,21 @@ export function PlaylistDetailPage() {
     }
   }, [id]);
 
+  // Refresh cache status when downloads complete
+  useEffect(() => {
+    if (!playlist?.tracks.length) return;
+
+    const interval = setInterval(async () => {
+      // Only refresh if there are active downloads for tracks in this playlist
+      const hasActiveDownloads = playlist.tracks.some(t => activeDownloads.has(t.fileId));
+      if (hasActiveDownloads || activeDownloads.size > 0) {
+        await updateCacheStatus(playlist.tracks);
+      }
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, [playlist?.tracks, activeDownloads.size]);
+
   const loadPlaylist = async () => {
     setLoading(true);
 

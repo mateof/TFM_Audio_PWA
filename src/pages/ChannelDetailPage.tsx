@@ -87,6 +87,29 @@ export function ChannelDetailPage() {
   const currentFolderId = searchParams.get('folder') || undefined;
   const folderPathParam = searchParams.get('path');
 
+  // Refresh cache status when downloads complete
+  useEffect(() => {
+    if (!files.length) return;
+
+    const audioFiles = files.filter(f => f.category === 'Audio');
+    if (audioFiles.length === 0) return;
+
+    const interval = setInterval(async () => {
+      // Only refresh if there are active downloads for files in this view
+      const hasActiveDownloads = audioFiles.some(f => activeDownloads.has(f.id));
+      if (hasActiveDownloads || activeDownloads.size > 0) {
+        const newCachedIds = new Set(cachedTrackIds);
+        for (const file of audioFiles) {
+          const isCached = await cacheService.isTrackCached(file.id);
+          if (isCached) newCachedIds.add(file.id);
+        }
+        setCachedTrackIds(newCachedIds);
+      }
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, [files, activeDownloads.size]);
+
   // Initialize folder path from URL
   useEffect(() => {
     if (folderPathParam) {
