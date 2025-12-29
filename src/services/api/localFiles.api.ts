@@ -23,7 +23,7 @@ export const localFilesApi = {
         page: params?.page,
         pageSize: params?.pageSize,
         sortBy: params?.sortBy,
-        sortDesc: params?.sortDesc
+        sortDescending: params?.sortDesc // Backend expects SortDescending
       }
     });
 

@@ -62,15 +62,21 @@ class AudioPlayerService {
     });
 
     this.audio.addEventListener('loadedmetadata', () => {
-      store().setDuration(this.audio.duration);
-      // Update MediaSession with correct duration
-      this.updatePositionState();
+      const duration = this.audio.duration;
+      console.log('loadedmetadata - duration:', duration);
+      if (Number.isFinite(duration) && duration > 0) {
+        store().setDuration(duration);
+        this.updatePositionState();
+      }
     });
 
     this.audio.addEventListener('durationchange', () => {
-      store().setDuration(this.audio.duration);
-      // Update MediaSession when duration changes
-      this.updatePositionState();
+      const duration = this.audio.duration;
+      console.log('durationchange - duration:', duration);
+      if (Number.isFinite(duration) && duration > 0) {
+        store().setDuration(duration);
+        this.updatePositionState();
+      }
     });
 
     this.audio.addEventListener('canplay', () => {
@@ -200,11 +206,18 @@ class AudioPlayerService {
     const playbackRate = this.audio.playbackRate;
 
     // Only update if we have valid finite values
-    if (!isFinite(duration) || duration <= 0) return;
-    if (!isFinite(position) || position < 0) return;
+    // Duration must be finite, positive, and reasonable (not Infinity)
+    if (!Number.isFinite(duration) || duration <= 0 || duration > 86400) {
+      // Duration not ready yet or invalid (86400 = 24 hours max)
+      return;
+    }
+
+    if (!Number.isFinite(position) || position < 0) {
+      return;
+    }
 
     // Ensure position doesn't exceed duration (can cause issues)
-    const safePosition = Math.min(position, duration);
+    const safePosition = Math.min(Math.max(0, position), duration);
 
     try {
       navigator.mediaSession.setPositionState({
@@ -213,7 +226,7 @@ class AudioPlayerService {
         position: safePosition
       });
     } catch (e) {
-      // Ignore errors (can happen with invalid values)
+      console.warn('MediaSession setPositionState error:', e);
     }
   }
 

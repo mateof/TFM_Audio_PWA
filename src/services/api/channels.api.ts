@@ -43,7 +43,7 @@ export const channelsApi = {
         page: params?.page,
         pageSize: params?.pageSize,
         sortBy: params?.sortBy,
-        sortDesc: params?.sortDesc
+        sortDescending: params?.sortDesc // Backend expects SortDescending
       }
     });
     // Extract totalCount from pagination.totalItems if available
