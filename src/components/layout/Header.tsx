@@ -39,13 +39,15 @@ interface HeaderActionProps {
   icon?: ReactNode;
   onClick: () => void;
   label?: string;
+  disabled?: boolean;
 }
 
-export function HeaderAction({ icon, onClick, label }: HeaderActionProps) {
+export function HeaderAction({ icon, onClick, label, disabled }: HeaderActionProps) {
   return (
     <button
       onClick={onClick}
-      className="p-2 text-slate-400 hover:text-white transition-colors touch-manipulation"
+      disabled={disabled}
+      className="p-2 text-slate-400 hover:text-white transition-colors touch-manipulation disabled:opacity-50 disabled:cursor-not-allowed"
       aria-label={label}
     >
       {icon || <MoreVertical className="w-5 h-5" />}

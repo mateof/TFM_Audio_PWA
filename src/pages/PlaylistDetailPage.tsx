@@ -65,9 +65,27 @@ export function PlaylistDetailPage() {
       setPlaylist(data);
       setIsOfflineMode(false);
 
-      // Update offline cache if it exists
+      // Update offline cache if it exists and auto-download new tracks
       if (offlineData) {
+        // Find new tracks that weren't in the offline version
+        const oldTrackIds = new Set(
+          (JSON.parse(offlineData.tracksJson) as Track[]).map(t => t.fileId)
+        );
+        const newTracks = data.tracks.filter(t => !oldTrackIds.has(t.fileId));
+
+        // Save updated playlist
         await saveOfflinePlaylist(id!, data.name, data.description, data.tracks);
+
+        // Queue new tracks for download
+        if (newTracks.length > 0) {
+          for (const track of newTracks) {
+            const isCached = await cacheService.isTrackCached(track.fileId);
+            if (!isCached) {
+              await downloadManager.addToQueue(track);
+            }
+          }
+          addToast(`${newTracks.length} new track(s) queued for download`, 'info');
+        }
       }
 
       // Check which tracks are cached

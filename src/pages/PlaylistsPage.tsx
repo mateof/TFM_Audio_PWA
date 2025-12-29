@@ -1,13 +1,19 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, ListMusic, ChevronRight, Trash2, CloudOff, WifiOff } from 'lucide-react';
+import { Plus, ListMusic, ChevronRight, Trash2, CloudOff, WifiOff, RefreshCw } from 'lucide-react';
 import { Header, HeaderAction } from '@/components/layout/Header';
 import { Button } from '@/components/common/Button';
 import { Input } from '@/components/common/Input';
 import { LoadingScreen } from '@/components/common/Spinner';
 import { playlistsApi } from '@/services/api/playlists.api';
 import { useUiStore } from '@/stores/uiStore';
-import { getAllOfflinePlaylists, deleteOfflinePlaylist } from '@/db/database';
+import {
+  getAllOfflinePlaylists,
+  deleteOfflinePlaylist,
+  getCachedPlaylists,
+  saveCachedPlaylists,
+  deleteCachedPlaylist
+} from '@/db/database';
 import type { Playlist } from '@/types/models';
 
 interface PlaylistWithOfflineStatus extends Playlist {
@@ -19,11 +25,13 @@ export function PlaylistsPage() {
   const { addToast } = useUiStore();
 
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
   const [playlists, setPlaylists] = useState<PlaylistWithOfflineStatus[]>([]);
   const [showCreate, setShowCreate] = useState(false);
   const [newPlaylistName, setNewPlaylistName] = useState('');
   const [creating, setCreating] = useState(false);
   const [isOfflineMode, setIsOfflineMode] = useState(false);
+  const syncAttempted = useRef(false);
 
   useEffect(() => {
     loadPlaylists();
@@ -32,15 +40,73 @@ export function PlaylistsPage() {
   const loadPlaylists = async () => {
     setLoading(true);
 
-    // Get offline playlists first
+    // Get offline playlists (playlists with tracks saved for offline)
     const offlinePlaylists = await getAllOfflinePlaylists();
     const offlineIds = new Set(offlinePlaylists.map(p => p.id));
 
+    // Get cached playlists list (all playlists from last server sync)
+    const cachedPlaylists = await getCachedPlaylists();
+
+    // If we have cached data, show it immediately
+    if (cachedPlaylists.length > 0 || offlinePlaylists.length > 0) {
+      // Merge cached playlists with offline status
+      const mergedPlaylists = mergePlaylists(cachedPlaylists, offlinePlaylists, offlineIds);
+      setPlaylists(mergedPlaylists);
+      setLoading(false);
+
+      // Try to sync in background
+      if (!syncAttempted.current) {
+        syncAttempted.current = true;
+        syncWithServer(offlineIds);
+      }
+    } else {
+      // No cached data - must wait for server
+      await syncWithServer(offlineIds, true);
+      setLoading(false);
+    }
+  };
+
+  const mergePlaylists = (
+    cached: Array<{ id: string; name: string; description?: string; trackCount: number; dateCreated: string; dateModified: string }>,
+    offline: Array<{ id: string; name: string; description?: string; trackCount: number; savedAt: Date; lastSyncedAt?: Date }>,
+    offlineIds: Set<string>
+  ): PlaylistWithOfflineStatus[] => {
+    // Create a map of all playlists, preferring cached (server) data
+    const playlistMap = new Map<string, PlaylistWithOfflineStatus>();
+
+    // First add offline playlists
+    for (const p of offline) {
+      playlistMap.set(p.id, {
+        id: p.id,
+        name: p.name,
+        description: p.description,
+        trackCount: p.trackCount,
+        dateCreated: p.savedAt.toISOString(),
+        dateModified: p.lastSyncedAt?.toISOString() || p.savedAt.toISOString(),
+        isOffline: true
+      });
+    }
+
+    // Then overlay with cached (server) data
+    for (const p of cached) {
+      playlistMap.set(p.id, {
+        ...p,
+        isOffline: offlineIds.has(p.id)
+      });
+    }
+
+    return Array.from(playlistMap.values());
+  };
+
+  const syncWithServer = async (offlineIds: Set<string>, showError = false) => {
+    setSyncing(true);
     try {
-      // Try to load from server
       const data = await playlistsApi.getAll();
 
-      // Mark which playlists are available offline
+      // Cache the playlists list for offline access
+      await saveCachedPlaylists(data);
+
+      // Update state with fresh data
       const playlistsWithStatus: PlaylistWithOfflineStatus[] = data.map(p => ({
         ...p,
         isOffline: offlineIds.has(p.id)
@@ -49,30 +115,26 @@ export function PlaylistsPage() {
       setPlaylists(playlistsWithStatus);
       setIsOfflineMode(false);
     } catch (error) {
-      console.error('Failed to load from server, using offline data:', error);
+      console.error('Failed to sync with server:', error);
+      setIsOfflineMode(true);
 
-      // Server unavailable - use offline playlists
-      if (offlinePlaylists.length > 0) {
-        const offlineAsPlaylists: PlaylistWithOfflineStatus[] = offlinePlaylists.map(p => ({
-          id: p.id,
-          name: p.name,
-          description: p.description,
-          trackCount: p.trackCount,
-          dateCreated: p.savedAt.toISOString(),
-          dateModified: p.lastSyncedAt?.toISOString() || p.savedAt.toISOString(),
-          isOffline: true
-        }));
-        setPlaylists(offlineAsPlaylists);
-        setIsOfflineMode(true);
-        addToast('Offline mode - showing cached playlists', 'info');
-      } else {
-        addToast('No connection and no offline playlists available', 'error');
-        setPlaylists([]);
-        setIsOfflineMode(true);
+      if (showError) {
+        const offlinePlaylists = await getAllOfflinePlaylists();
+        if (offlinePlaylists.length === 0) {
+          addToast('No connection and no cached playlists', 'error');
+        } else {
+          addToast('Offline mode - showing cached playlists', 'info');
+        }
       }
     } finally {
-      setLoading(false);
+      setSyncing(false);
     }
+  };
+
+  const handleRefresh = async () => {
+    const offlinePlaylists = await getAllOfflinePlaylists();
+    const offlineIds = new Set(offlinePlaylists.map(p => p.id));
+    await syncWithServer(offlineIds, true);
   };
 
   const handleCreatePlaylist = async () => {
@@ -92,6 +154,9 @@ export function PlaylistsPage() {
       setNewPlaylistName('');
       setShowCreate(false);
       addToast('Playlist created!', 'success');
+
+      // Refresh from server to get the new playlist
+      syncAttempted.current = false;
       loadPlaylists();
     } catch {
       addToast('Failed to create playlist', 'error');
@@ -108,10 +173,13 @@ export function PlaylistsPage() {
       if (!isOfflineMode) {
         await playlistsApi.delete(playlist.id);
       }
-      // Also delete offline version
+      // Also delete from cache and offline storage
       await deleteOfflinePlaylist(playlist.id);
+      await deleteCachedPlaylist(playlist.id);
+
+      // Update local state immediately
+      setPlaylists(prev => prev.filter(p => p.id !== playlist.id));
       addToast('Playlist deleted', 'success');
-      loadPlaylists();
     } catch {
       addToast('Failed to delete playlist', 'error');
     }
@@ -122,11 +190,19 @@ export function PlaylistsPage() {
       <Header
         title="Playlists"
         actions={
-          <HeaderAction
-            icon={<Plus className="w-5 h-5" />}
-            onClick={() => setShowCreate(true)}
-            label="Create playlist"
-          />
+          <>
+            <HeaderAction
+              icon={<RefreshCw className={`w-5 h-5 ${syncing ? 'animate-spin' : ''}`} />}
+              onClick={handleRefresh}
+              label="Refresh"
+              disabled={syncing}
+            />
+            <HeaderAction
+              icon={<Plus className="w-5 h-5" />}
+              onClick={() => setShowCreate(true)}
+              label="Create playlist"
+            />
+          </>
         }
       />
 
@@ -135,6 +211,15 @@ export function PlaylistsPage() {
         <div className="flex items-center gap-2 px-4 py-2 bg-amber-500/20 text-amber-400 text-sm">
           <WifiOff className="w-4 h-4" />
           <span>Offline mode - showing cached playlists</span>
+          {syncing && <RefreshCw className="w-4 h-4 animate-spin ml-auto" />}
+        </div>
+      )}
+
+      {/* Syncing indicator when online */}
+      {!isOfflineMode && syncing && (
+        <div className="flex items-center gap-2 px-4 py-2 bg-emerald-500/20 text-emerald-400 text-sm">
+          <RefreshCw className="w-4 h-4 animate-spin" />
+          <span>Syncing...</span>
         </div>
       )}
 

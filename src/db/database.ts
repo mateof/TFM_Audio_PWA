@@ -60,12 +60,24 @@ export interface PlayHistoryEntity {
   playedAt: Date;
 }
 
+// Cached playlists list (for offline access to all playlists)
+export interface CachedPlaylistEntity {
+  id: string;
+  name: string;
+  description?: string;
+  trackCount: number;
+  dateCreated: string;
+  dateModified: string;
+  cachedAt: Date;
+}
+
 class TFMAudioDatabase extends Dexie {
   serverConfig!: Table<ServerConfigEntity>;
   cachedTracks!: Table<CachedTrackEntity>;
   offlinePlaylists!: Table<OfflinePlaylistEntity>;
   downloadQueue!: Table<DownloadQueueEntity>;
   playHistory!: Table<PlayHistoryEntity>;
+  cachedPlaylists!: Table<CachedPlaylistEntity>;
 
   constructor() {
     super('TFMAudioDB');
@@ -76,6 +88,16 @@ class TFMAudioDatabase extends Dexie {
       offlinePlaylists: 'id, autoSync',
       downloadQueue: '++id, trackId, status, addedAt',
       playHistory: '++id, trackId, playedAt'
+    });
+
+    // Version 2: Add cached playlists table
+    this.version(2).stores({
+      serverConfig: '++id',
+      cachedTracks: 'id, channelId, cachedAt, lastPlayedAt',
+      offlinePlaylists: 'id, autoSync',
+      downloadQueue: '++id, trackId, status, addedAt',
+      playHistory: '++id, trackId, playedAt',
+      cachedPlaylists: 'id, cachedAt'
     });
   }
 }
@@ -140,4 +162,39 @@ export async function deleteOfflinePlaylist(id: string): Promise<void> {
 export async function isPlaylistOffline(id: string): Promise<boolean> {
   const playlist = await db.offlinePlaylists.get(id);
   return !!playlist;
+}
+
+// Cached playlists helpers (for offline list view)
+export async function saveCachedPlaylists(playlists: Array<{
+  id: string;
+  name: string;
+  description?: string;
+  trackCount: number;
+  dateCreated: string;
+  dateModified: string;
+}>): Promise<void> {
+  const cachedAt = new Date();
+  await db.cachedPlaylists.clear();
+  await db.cachedPlaylists.bulkPut(
+    playlists.map(p => ({ ...p, cachedAt }))
+  );
+}
+
+export async function getCachedPlaylists(): Promise<CachedPlaylistEntity[]> {
+  return db.cachedPlaylists.toArray();
+}
+
+export async function updateCachedPlaylist(playlist: {
+  id: string;
+  name: string;
+  description?: string;
+  trackCount: number;
+  dateCreated: string;
+  dateModified: string;
+}): Promise<void> {
+  await db.cachedPlaylists.put({ ...playlist, cachedAt: new Date() });
+}
+
+export async function deleteCachedPlaylist(id: string): Promise<void> {
+  await db.cachedPlaylists.delete(id);
 }

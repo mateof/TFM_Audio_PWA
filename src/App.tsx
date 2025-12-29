@@ -16,6 +16,7 @@ import { LoadingScreen } from '@/components/common/Spinner';
 
 import { isServerConfigured } from '@/db/database';
 import { useSettingsStore } from '@/stores/settingsStore';
+import { playlistSyncService } from '@/services/sync/PlaylistSyncService';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -34,6 +35,19 @@ function AppContent() {
   useEffect(() => {
     checkConfiguration();
   }, []);
+
+  // Start playlist sync service when configured
+  useEffect(() => {
+    if (isConfigured) {
+      playlistSyncService.start();
+      // Also check for missing tracks on startup
+      playlistSyncService.downloadMissingTracks();
+    }
+
+    return () => {
+      playlistSyncService.stop();
+    };
+  }, [isConfigured]);
 
   const checkConfiguration = async () => {
     try {
