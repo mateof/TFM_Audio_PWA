@@ -50,12 +50,28 @@ class DownloadManager {
       .equals(track.fileId)
       .first();
 
-    if (existing && existing.status !== 'failed' && existing.status !== 'cancelled') {
-      console.log('Track already in queue:', track.fileName);
+    if (existing) {
+      // If completed, skip
+      if (existing.status === 'completed') {
+        console.log('Track already completed:', track.fileName);
+        return;
+      }
+
+      // If pending/downloading/failed/cancelled, reset and update streamUrl
+      await db.downloadQueue.update(existing.id!, {
+        status: 'pending',
+        progress: 0,
+        streamUrl: track.streamUrl, // Update in case URL changed (http->https)
+        errorMessage: undefined
+      });
+      console.log('Track reset in queue:', track.fileName);
+
+      // Start processing if not already
+      this.processQueue();
       return;
     }
 
-    // Add to queue
+    // Add new to queue
     const queueItem: Omit<DownloadQueueEntity, 'id'> = {
       trackId: track.fileId,
       streamUrl: track.streamUrl,
