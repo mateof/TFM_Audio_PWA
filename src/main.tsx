@@ -2,11 +2,9 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
+import { APP_CONFIG } from './config/app'
 
 // Console banner
-const APP_VERSION = '1.0.0';
-const REPO_URL = 'https://github.com/mateof/TFMPlayer';
-
 console.log(
   `%c
   ████████╗███████╗███╗   ███╗
@@ -15,9 +13,9 @@ console.log(
      ██║   ██╔══╝  ██║╚██╔╝██║
      ██║   ██║     ██║ ╚═╝ ██║
      ╚═╝   ╚═╝     ╚═╝     ╚═╝
-  %c TFM Audio Player %c v${APP_VERSION} %c
+  %c ${APP_CONFIG.name} %c v${APP_CONFIG.version} %c
 
-  %c${REPO_URL}%c
+  %c${APP_CONFIG.repository}%c
   `,
   'color: #10b981; font-family: monospace; font-weight: bold;',
   'background: #10b981; color: #000; padding: 4px 8px; border-radius: 4px 0 0 4px; font-weight: bold;',
