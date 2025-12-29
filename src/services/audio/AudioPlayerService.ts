@@ -21,6 +21,39 @@ class AudioPlayerService {
     }
   }
 
+  // Fetch full file in chunks when server returns partial content
+  private async fetchFullFile(url: string, apiKey: string, totalSize: number): Promise<Blob> {
+    const CHUNK_SIZE = 2 * 1024 * 1024; // 2MB chunks (matching server's chunk size)
+    const chunks: BlobPart[] = [];
+    let downloaded = 0;
+
+    while (downloaded < totalSize) {
+      const end = Math.min(downloaded + CHUNK_SIZE - 1, totalSize - 1);
+      const rangeHeader = `bytes=${downloaded}-${end}`;
+
+      console.log(`Fetching chunk: ${rangeHeader} (${Math.round(downloaded / totalSize * 100)}%)`);
+
+      const response = await fetch(url, {
+        headers: {
+          'X-API-Key': apiKey,
+          'Range': rangeHeader
+        }
+      });
+
+      if (!response.ok && response.status !== 206) {
+        throw new Error(`Chunk fetch failed: HTTP ${response.status}`);
+      }
+
+      const chunk = await response.arrayBuffer();
+      chunks.push(chunk);
+      downloaded += chunk.byteLength;
+
+      console.log(`Downloaded ${downloaded} / ${totalSize} bytes (${Math.round(downloaded / totalSize * 100)}%)`);
+    }
+
+    return new Blob(chunks, { type: 'audio/mpeg' });
+  }
+
   private setupEventListeners() {
     const store = usePlayerStore.getState;
 
@@ -188,23 +221,49 @@ class AudioPlayerService {
 
       const response = await fetch(url, {
         headers: {
-          'X-API-Key': config.apiKey
+          'X-API-Key': config.apiKey,
+          'Range': 'bytes=0-' // Request full file to avoid partial responses
         }
       });
 
-      if (!response.ok) {
+      if (!response.ok && response.status !== 206) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
+      // Check if we got a partial response
+      const contentRange = response.headers.get('content-range');
       const contentLength = response.headers.get('content-length');
-      console.log('Fetching audio, Content-Length:', contentLength);
+
+      let totalSize = contentLength ? parseInt(contentLength) : 0;
+
+      // If partial response, extract total size from Content-Range header
+      // Format: "bytes 0-2097152/10801665" - we need the total (10801665)
+      if (contentRange) {
+        const match = contentRange.match(/\/(\d+)$/);
+        if (match) {
+          totalSize = parseInt(match[1]);
+          console.log('Partial response detected. Total file size:', totalSize, 'Content-Length:', contentLength);
+        }
+      }
+
+      console.log('Fetching audio, Content-Length:', contentLength, 'Total Size:', totalSize);
+
+      // If this is a partial response and we didn't get the full file, fetch chunks
+      if (contentRange && contentLength && parseInt(contentLength) < totalSize) {
+        console.log('Server returned partial content. Fetching full file in chunks...');
+        const blob = await this.fetchFullFile(url, config.apiKey, totalSize);
+        console.log('Created blob for playback:', track.fileName, 'Size:', blob.size, 'Expected:', totalSize);
+        const blobUrl = URL.createObjectURL(blob);
+        this.currentBlobUrl = blobUrl;
+        return blobUrl;
+      }
 
       const blob = await response.blob();
-      console.log('Created blob for playback:', track.fileName, 'Size:', blob.size, 'Expected:', contentLength);
+      console.log('Created blob for playback:', track.fileName, 'Size:', blob.size, 'Expected:', totalSize);
 
       // Verify we got the full file
-      if (contentLength && blob.size < parseInt(contentLength) * 0.9) {
-        console.warn('Incomplete download! Got', blob.size, 'expected', contentLength);
+      if (totalSize && blob.size < totalSize * 0.9) {
+        console.warn('Incomplete download! Got', blob.size, 'expected', totalSize);
       }
 
       const blobUrl = URL.createObjectURL(blob);

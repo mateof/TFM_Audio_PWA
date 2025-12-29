@@ -155,6 +155,54 @@ class DownloadManager {
     await this.processQueue();
   }
 
+  // Download file in chunks when server returns partial content
+  private async downloadInChunks(
+    item: DownloadQueueEntity,
+    apiKey: string,
+    totalSize: number,
+    signal: AbortSignal
+  ): Promise<Blob> {
+    const CHUNK_SIZE = 2 * 1024 * 1024; // 2MB chunks (matching server's chunk size)
+    const chunks: BlobPart[] = [];
+    let downloaded = 0;
+
+    while (downloaded < totalSize) {
+      if (signal.aborted) {
+        throw new DOMException('Download cancelled', 'AbortError');
+      }
+
+      const end = Math.min(downloaded + CHUNK_SIZE - 1, totalSize - 1);
+      const rangeHeader = `bytes=${downloaded}-${end}`;
+
+      console.log(`Downloading chunk: ${rangeHeader}`);
+
+      const response = await fetch(item.streamUrl, {
+        signal,
+        headers: {
+          'X-API-Key': apiKey,
+          'Range': rangeHeader
+        }
+      });
+
+      if (!response.ok && response.status !== 206) {
+        throw new Error(`Chunk fetch failed: HTTP ${response.status}`);
+      }
+
+      const chunk = await response.arrayBuffer();
+      chunks.push(chunk);
+      downloaded += chunk.byteLength;
+
+      // Update progress
+      const progress = Math.round((downloaded / totalSize) * 100);
+      await db.downloadQueue.update(item.id!, { progress });
+      useDownloadStore.getState().setProgress(item.trackId, progress);
+
+      console.log(`Downloaded ${downloaded} / ${totalSize} bytes (${progress}%)`);
+    }
+
+    return new Blob(chunks, { type: 'audio/mpeg' });
+  }
+
   // Download a single item
   private async downloadItem(item: DownloadQueueEntity): Promise<void> {
     const abortController = new AbortController();
@@ -167,21 +215,58 @@ class DownloadManager {
       // Get API key for authentication
       const apiKey = await apiClient.getApiKey();
 
-      // Download the file with authentication
+      // First request to check file size and if server returns partial content
       const response = await fetch(item.streamUrl, {
         signal: abortController.signal,
         headers: {
-          'X-API-Key': apiKey
+          'X-API-Key': apiKey,
+          'Range': 'bytes=0-' // Request full file
         }
       });
 
-      if (!response.ok) {
+      if (!response.ok && response.status !== 206) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
+      // Check for partial response
+      const contentRange = response.headers.get('content-range');
       const contentLength = response.headers.get('content-length');
-      const totalSize = contentLength ? parseInt(contentLength) : item.fileSize;
 
+      let totalSize = contentLength ? parseInt(contentLength) : item.fileSize;
+
+      // Extract total size from Content-Range header if present
+      // Format: "bytes 0-2097152/10801665" - we need the total (10801665)
+      if (contentRange) {
+        const match = contentRange.match(/\/(\d+)$/);
+        if (match) {
+          totalSize = parseInt(match[1]);
+          console.log('Partial response detected for download. Total:', totalSize, 'Chunk:', contentLength);
+        }
+      }
+
+      // If server returns partial content, fetch in chunks
+      if (contentRange && contentLength && parseInt(contentLength) < totalSize) {
+        console.log('Server returned partial content. Downloading in chunks...');
+        const blob = await this.downloadInChunks(item, apiKey, totalSize, abortController.signal);
+
+        await db.cachedTracks.put({
+          id: item.trackId,
+          channelId: item.channelId,
+          channelName: item.channelName,
+          fileName: item.fileName,
+          fileSize: blob.size,
+          streamUrl: item.streamUrl,
+          cachedAt: new Date(),
+          blob
+        });
+
+        await db.downloadQueue.delete(item.id!);
+        console.log('Download completed (chunked):', item.fileName, 'Size:', blob.size);
+        useDownloadStore.getState().removeProgress(item.trackId);
+        return;
+      }
+
+      // Normal download (server returned full file)
       const reader = response.body?.getReader();
       if (!reader) {
         throw new Error('No response body');
