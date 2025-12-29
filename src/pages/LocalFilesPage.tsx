@@ -89,11 +89,12 @@ export function LocalFilesPage() {
   };
 
   // Filter files by extension on the client side
-  const filterByExtension = (files: ChannelFile[]): ChannelFile[] => {
-    if (!isExtensionFilter) return files;
+  const filterByExtension = (fileList: ChannelFile[]): ChannelFile[] => {
+    if (!Array.isArray(fileList)) return [];
+    if (!isExtensionFilter) return fileList;
 
     const ext = `.${filterMode.toLowerCase()}`;
-    return files.filter(f =>
+    return fileList.filter(f =>
       f.category === 'Folder' ||
       f.name.toLowerCase().endsWith(ext)
     );
@@ -101,6 +102,7 @@ export function LocalFilesPage() {
 
   // Sort files client-side
   const sortFilesBy = useCallback((filesToSort: ChannelFile[], sort: SortBy, desc: boolean): ChannelFile[] => {
+    if (!Array.isArray(filesToSort)) return [];
     const sorted = [...filesToSort];
 
     sorted.sort((a, b) => {
@@ -134,6 +136,7 @@ export function LocalFilesPage() {
 
   // Compute sorted files for display
   const displayFiles = useMemo(() => {
+    if (!Array.isArray(files)) return [];
     return sortFilesBy(files, sortBy, sortDesc);
   }, [files, sortBy, sortDesc, sortFilesBy]);
 
