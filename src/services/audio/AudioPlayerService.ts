@@ -169,13 +169,15 @@ class AudioPlayerService {
     const track = usePlayerStore.getState().currentTrack;
     if (!track) return;
 
+    // Use BASE_URL for correct path on GitHub Pages
+    const baseUrl = import.meta.env.BASE_URL || '/';
     navigator.mediaSession.metadata = new MediaMetadata({
       title: track.title || track.fileName,
       artist: track.artist || track.channelName,
       album: track.album || '',
       artwork: [
-        { src: '/pwa-192x192.svg', sizes: '192x192', type: 'image/svg+xml' },
-        { src: '/pwa-512x512.svg', sizes: '512x512', type: 'image/svg+xml' }
+        { src: `${baseUrl}pwa-192x192.svg`, sizes: '192x192', type: 'image/svg+xml' },
+        { src: `${baseUrl}pwa-512x512.svg`, sizes: '512x512', type: 'image/svg+xml' }
       ]
     });
 
