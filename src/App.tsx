@@ -78,9 +78,12 @@ function AppContent() {
 }
 
 export default function App() {
+  // Use basename for GitHub Pages deployment at /TFMPlayer/
+  const basename = import.meta.env.BASE_URL.replace(/\/$/, '');
+
   return (
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
+      <BrowserRouter basename={basename}>
         <AppContent />
       </BrowserRouter>
     </QueryClientProvider>
