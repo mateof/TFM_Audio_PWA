@@ -1,5 +1,6 @@
 import { db, type DownloadQueueEntity } from '@/db/database';
 import { cacheService } from '@/services/cache/CacheService';
+import { apiClient } from '@/services/api/client';
 import type { Track } from '@/types/models';
 import { create } from 'zustand';
 
@@ -114,9 +115,15 @@ class DownloadManager {
       // Update status to downloading
       await db.downloadQueue.update(item.id!, { status: 'downloading' });
 
-      // Download the file
+      // Get API key for authentication
+      const apiKey = await apiClient.getApiKey();
+
+      // Download the file with authentication
       const response = await fetch(item.streamUrl, {
-        signal: abortController.signal
+        signal: abortController.signal,
+        headers: {
+          'X-API-Key': apiKey
+        }
       });
 
       if (!response.ok) {

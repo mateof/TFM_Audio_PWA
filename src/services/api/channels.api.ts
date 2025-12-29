@@ -31,6 +31,8 @@ export const channelsApi = {
     pageSize?: number;
     filter?: string;
     search?: string;
+    sortBy?: string;
+    sortDesc?: boolean;
   }): Promise<{ files: ChannelFile[]; totalCount: number }> {
     const client = await apiClient.getClient();
     const { data } = await client.get<ApiResult<ChannelFile[]>>(`/api/mobile/channels/${id}/files`, {
@@ -39,7 +41,9 @@ export const channelsApi = {
         filter: params?.filter,
         searchText: params?.search,
         page: params?.page,
-        pageSize: params?.pageSize
+        pageSize: params?.pageSize,
+        sortBy: params?.sortBy,
+        sortDesc: params?.sortDesc
       }
     });
     return { files: data.data, totalCount: data.totalCount || data.data.length };

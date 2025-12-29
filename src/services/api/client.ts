@@ -45,6 +45,17 @@ class ApiClient {
     return this.baseUrl;
   }
 
+  private apiKey: string = '';
+
+  async getApiKey(): Promise<string> {
+    if (this.apiKey) return this.apiKey;
+    const config = await getServerConfig();
+    if (config) {
+      this.apiKey = config.apiKey;
+    }
+    return this.apiKey;
+  }
+
   clearCache(): void {
     this.client = null;
     this.baseUrl = '';

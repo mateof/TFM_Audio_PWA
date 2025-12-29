@@ -192,7 +192,9 @@ export function ChannelDetailPage() {
           page,
           pageSize: PAGE_SIZE,
           filter: getApiFilter(),
-          search: searchText || undefined
+          search: searchText || undefined,
+          sortBy,
+          sortDesc
         }
       );
 
