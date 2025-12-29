@@ -27,7 +27,6 @@ export function PlaylistDetailPage() {
   const [loading, setLoading] = useState(true);
   const [playlist, setPlaylist] = useState<PlaylistDetail | null>(null);
   const [cachedTrackIds, setCachedTrackIds] = useState<Set<string>>(new Set());
-  const [downloading, setDownloading] = useState(false);
   const [isOffline, setIsOffline] = useState(false);
   const [isOfflineMode, setIsOfflineMode] = useState(false);
   const [togglingOffline, setTogglingOffline] = useState(false);
@@ -164,30 +163,6 @@ export function PlaylistDetailPage() {
     }
   };
 
-  const handleDownloadAll = async () => {
-    if (!playlist?.tracks.length) return;
-
-    const tracksToDownload = playlist.tracks.filter(
-      (track) => !cachedTrackIds.has(track.fileId)
-    );
-
-    if (tracksToDownload.length === 0) {
-      addToast('All tracks already cached', 'info');
-      return;
-    }
-
-    setDownloading(true);
-    try {
-      await downloadManager.addMultipleToQueue(tracksToDownload);
-      addToast(`Added ${tracksToDownload.length} tracks to download queue`, 'success');
-    } catch (error) {
-      addToast('Failed to start downloads', 'error');
-      console.error(error);
-    } finally {
-      setDownloading(false);
-    }
-  };
-
   const handleDownloadTrack = async (track: Track, e: React.MouseEvent) => {
     e.stopPropagation();
     await downloadManager.addToQueue(track);
@@ -241,7 +216,6 @@ export function PlaylistDetailPage() {
   const totalDuration = playlist.tracks.reduce((acc, t) => acc + (t.duration || 0), 0);
   const totalSize = playlist.tracks.reduce((acc, t) => acc + t.fileSize, 0);
   const cachedCount = cachedTrackIds.size;
-  const allCached = cachedCount === playlist.tracks.length && playlist.tracks.length > 0;
 
   return (
     <div className="flex flex-col min-h-screen">
