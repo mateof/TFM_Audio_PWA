@@ -51,13 +51,18 @@ class DownloadManager {
       .first();
 
     if (existing) {
-      // If completed, skip
+      // If completed, verify it's actually cached
       if (existing.status === 'completed') {
-        console.log('Track already completed:', track.fileName);
-        return;
+        const isActuallyCached = await cacheService.isTrackCached(track.fileId);
+        if (isActuallyCached) {
+          console.log('Track already completed and cached:', track.fileName);
+          return;
+        }
+        // Not actually cached, need to re-download
+        console.log('Track marked completed but not cached, resetting:', track.fileName);
       }
 
-      // If pending/downloading/failed/cancelled, reset and update streamUrl
+      // Reset and update streamUrl for re-download
       await db.downloadQueue.update(existing.id!, {
         status: 'pending',
         progress: 0,

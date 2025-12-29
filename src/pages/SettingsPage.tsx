@@ -12,7 +12,7 @@ import { formatFileSize } from '@/utils/format';
 
 // App version with build timestamp
 const APP_VERSION = '1.2.0';
-const BUILD_TIMESTAMP = '__BUILD_TIMESTAMP__'; // Will be replaced by Vite
+const BUILD_TIMESTAMP = import.meta.env.BUILD_TIMESTAMP || 'dev';
 
 export function SettingsPage() {
   const navigate = useNavigate();

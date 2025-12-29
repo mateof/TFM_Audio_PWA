@@ -7,7 +7,7 @@ import path from 'path'
 export default defineConfig({
   base: '/TFMPlayer/',
   define: {
-    '__BUILD_TIMESTAMP__': JSON.stringify(new Date().toISOString().replace('T', ' ').slice(0, 19))
+    'import.meta.env.BUILD_TIMESTAMP': JSON.stringify(new Date().toISOString().replace('T', ' ').slice(0, 19))
   },
   plugins: [
     react(),
