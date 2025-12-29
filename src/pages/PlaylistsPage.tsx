@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, ListMusic, ChevronRight, Trash2, CloudOff, Cloud, WifiOff } from 'lucide-react';
+import { Plus, ListMusic, ChevronRight, Trash2, CloudOff, WifiOff } from 'lucide-react';
 import { Header, HeaderAction } from '@/components/layout/Header';
 import { Button } from '@/components/common/Button';
 import { Input } from '@/components/common/Input';
@@ -58,8 +58,8 @@ export function PlaylistsPage() {
           name: p.name,
           description: p.description,
           trackCount: p.trackCount,
-          createdAt: p.savedAt.toISOString(),
-          updatedAt: p.lastSyncedAt?.toISOString() || p.savedAt.toISOString(),
+          dateCreated: p.savedAt.toISOString(),
+          dateModified: p.lastSyncedAt?.toISOString() || p.savedAt.toISOString(),
           isOffline: true
         }));
         setPlaylists(offlineAsPlaylists);

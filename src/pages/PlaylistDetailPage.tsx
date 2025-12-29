@@ -70,8 +70,8 @@ export function PlaylistDetailPage() {
           description: offlineData.description,
           trackCount: offlineData.trackCount,
           tracks,
-          createdAt: offlineData.savedAt.toISOString(),
-          updatedAt: offlineData.lastSyncedAt?.toISOString() || offlineData.savedAt.toISOString()
+          dateCreated: offlineData.savedAt.toISOString(),
+          dateModified: offlineData.lastSyncedAt?.toISOString() || offlineData.savedAt.toISOString()
         });
         setIsOfflineMode(true);
         await updateCacheStatus(tracks);

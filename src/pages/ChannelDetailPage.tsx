@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { Music, Video, FileText, Image, Folder, Play, Plus, ChevronRight, Download, Search, SlidersHorizontal, X, Loader2 } from 'lucide-react';
 import { Header } from '@/components/layout/Header';
-import { LoadingScreen, Spinner } from '@/components/common/Spinner';
+import { LoadingScreen } from '@/components/common/Spinner';
 import { PlaylistPicker } from '@/components/playlists/PlaylistPicker';
 import { channelsApi } from '@/services/api/channels.api';
 import { useAudioPlayer } from '@/hooks/useAudioPlayer';
