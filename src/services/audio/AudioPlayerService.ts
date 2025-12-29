@@ -30,7 +30,6 @@ class AudioPlayerService {
 
     this.audio.addEventListener('loadedmetadata', () => {
       const duration = this.audio.duration;
-      console.log('loadedmetadata - duration:', duration);
       if (Number.isFinite(duration) && duration > 0) {
         store().setDuration(duration);
         this.updatePositionState();
@@ -39,7 +38,6 @@ class AudioPlayerService {
 
     this.audio.addEventListener('durationchange', () => {
       const duration = this.audio.duration;
-      console.log('durationchange - duration:', duration);
       if (Number.isFinite(duration) && duration > 0) {
         store().setDuration(duration);
         this.updatePositionState();
@@ -173,22 +171,11 @@ class AudioPlayerService {
     const playbackRate = this.audio.playbackRate;
 
     // Only update if we have valid finite values
-    // Duration must be finite, positive, and reasonable (not Infinity)
-    if (!Number.isFinite(duration) || duration <= 0 || duration > 86400) {
-      // Duration not ready yet or invalid (86400 = 24 hours max)
-      console.log('MediaSession: invalid duration', duration);
-      return;
-    }
+    if (!Number.isFinite(duration) || duration <= 0 || duration > 86400) return;
+    if (!Number.isFinite(position) || position < 0) return;
 
-    if (!Number.isFinite(position) || position < 0) {
-      console.log('MediaSession: invalid position', position);
-      return;
-    }
-
-    // Ensure position doesn't exceed duration (can cause issues)
+    // Ensure position doesn't exceed duration
     const safePosition = Math.min(Math.max(0, position), duration);
-
-    console.log('MediaSession update:', { position: safePosition, duration, playbackRate });
 
     try {
       navigator.mediaSession.setPositionState({
@@ -196,8 +183,8 @@ class AudioPlayerService {
         playbackRate: playbackRate || 1,
         position: safePosition
       });
-    } catch (e) {
-      console.warn('MediaSession setPositionState error:', e);
+    } catch {
+      // Ignore errors (some browsers don't support this)
     }
   }
 
