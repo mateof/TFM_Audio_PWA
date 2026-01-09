@@ -12,6 +12,7 @@ class AudioPlayerService {
   private audioContext: AudioContext | null = null;
   private analyserNode: AnalyserNode | null = null;
   private streamSourceNode: MediaStreamAudioSourceNode | null = null;
+  private visualizerInitialized = false;
 
   constructor() {
     this.audio = new Audio();
@@ -21,8 +22,10 @@ class AudioPlayerService {
 
   // Initialize Web Audio API for visualizer (called on user interaction)
   initVisualizer(): AnalyserNode | null {
-    // Only create once
-    if (this.analyserNode) {
+    // Only create audio context and analyser once
+    if (this.analyserNode && this.visualizerInitialized) {
+      // Reconnect stream if needed (for track changes)
+      this.reconnectVisualizerStream();
       return this.analyserNode;
     }
 
@@ -43,21 +46,52 @@ class AudioPlayerService {
       this.analyserNode.minDecibels = -85;
       this.analyserNode.maxDecibels = -10;
 
-      // Use captureStream to tap into audio WITHOUT affecting playback
-      // The audio element continues to output directly to speakers
-      const stream = (this.audio as HTMLAudioElement & { captureStream: () => MediaStream }).captureStream();
-      this.streamSourceNode = this.audioContext.createMediaStreamSource(stream);
-
-      // Connect ONLY to analyser (NOT to destination)
-      // This way we just read frequency data without affecting audio output
-      this.streamSourceNode.connect(this.analyserNode);
-      // DO NOT connect to destination - audio plays directly from element
+      // Connect the stream
+      this.reconnectVisualizerStream();
+      this.visualizerInitialized = true;
 
       console.log('Visualizer initialized with captureStream (no audio interference)');
       return this.analyserNode;
     } catch (error) {
       console.error('Failed to initialize visualizer:', error);
       return null;
+    }
+  }
+
+  // Reconnect the stream source (needed when track changes)
+  private reconnectVisualizerStream(): void {
+    if (!this.audioContext || !this.analyserNode) return;
+
+    try {
+      // Disconnect old source if exists
+      if (this.streamSourceNode) {
+        try {
+          this.streamSourceNode.disconnect();
+        } catch {
+          // Ignore disconnect errors
+        }
+      }
+
+      // Create new stream from current audio
+      const stream = (this.audio as HTMLAudioElement & { captureStream: () => MediaStream }).captureStream();
+      this.streamSourceNode = this.audioContext.createMediaStreamSource(stream);
+
+      // Connect ONLY to analyser (NOT to destination)
+      this.streamSourceNode.connect(this.analyserNode);
+
+      // Resume audio context if suspended
+      if (this.audioContext.state === 'suspended') {
+        this.audioContext.resume();
+      }
+    } catch (error) {
+      console.error('Failed to reconnect visualizer stream:', error);
+    }
+  }
+
+  // Called when track changes to refresh visualizer connection
+  refreshVisualizer(): void {
+    if (this.visualizerInitialized) {
+      this.reconnectVisualizerStream();
     }
   }
 
@@ -301,6 +335,9 @@ class AudioPlayerService {
       this.audio.volume = store.volume;
 
       await this.audio.play();
+
+      // Refresh visualizer connection for new track
+      this.refreshVisualizer();
     } catch (error) {
       console.error('Playback error:', error);
       store.setState('error');

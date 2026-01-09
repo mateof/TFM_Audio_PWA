@@ -71,37 +71,54 @@ export function AudioEqualizer({ isPlaying }: AudioEqualizerProps) {
 
       const frequencyBinCount = analyser.frequencyBinCount;
 
-      // Skip first few bins (DC offset, very low rumble) and limit upper range
-      // Most music content is between 60Hz and 14kHz
-      const minBin = 2; // Skip DC and very low frequencies
-      const maxBin = Math.floor(frequencyBinCount * 0.85); // Skip very high frequencies (usually empty)
-      const usableBins = maxBin - minBin;
+      // Logarithmic frequency mapping (like human hearing)
+      // Bass on left, mids in middle, treble on right
+      const minFreq = 60;    // Hz - lowest frequency to show
+      const maxFreq = 14000; // Hz - highest frequency to show
+      const sampleRate = 44100;
+      const binWidth = sampleRate / (analyser.fftSize || 256);
 
       for (let i = 0; i < BAR_COUNT; i++) {
-        // Linear distribution across usable frequency range
-        // This ensures all bars get data
-        const startIndex = minBin + Math.floor((i / BAR_COUNT) * usableBins);
-        const endIndex = minBin + Math.floor(((i + 1) / BAR_COUNT) * usableBins);
+        // Logarithmic interpolation between min and max frequency
+        const freqLow = minFreq * Math.pow(maxFreq / minFreq, i / BAR_COUNT);
+        const freqHigh = minFreq * Math.pow(maxFreq / minFreq, (i + 1) / BAR_COUNT);
 
-        // Average the values in this range
+        // Convert frequencies to bin indices
+        const binLow = Math.max(0, Math.floor(freqLow / binWidth));
+        const binHigh = Math.min(frequencyBinCount - 1, Math.ceil(freqHigh / binWidth));
+
+        // Average the values in this frequency range
         let sum = 0;
         let count = 0;
         let maxVal = 0;
-        for (let j = startIndex; j < endIndex && j < frequencyBinCount; j++) {
+        for (let j = binLow; j <= binHigh; j++) {
           sum += dataArray[j];
           maxVal = Math.max(maxVal, dataArray[j]);
           count++;
         }
 
-        // Use combination of average and max for more responsive visualization
         const average = count > 0 ? sum / count : 0;
-        const combined = (average * 0.6 + maxVal * 0.4);
+        const combined = (average * 0.5 + maxVal * 0.5);
 
-        // Normalize and apply slight boost for visual appeal
-        const normalized = combined / 255;
+        // Normalize
+        let normalized = combined / 255;
 
-        // Apply curve for better visual response (boost quiet, compress loud)
-        const curved = Math.pow(normalized, 0.8) * 1.2;
+        // Apply frequency-dependent boost
+        // Higher frequencies naturally have less energy, so boost them more
+        const barPosition = i / BAR_COUNT;
+        let boost = 1.0;
+        if (barPosition > 0.7) {
+          // Treble boost (last 30% of bars)
+          boost = 1.5 + (barPosition - 0.7) * 2.5; // 1.5x to 2.25x
+        } else if (barPosition > 0.4) {
+          // Mid-high boost
+          boost = 1.2 + (barPosition - 0.4) * 1.0; // 1.2x to 1.5x
+        }
+
+        normalized = normalized * boost;
+
+        // Apply curve for better visual dynamics
+        const curved = Math.pow(normalized, 0.75);
 
         barValues.push(Math.min(1, curved));
       }
