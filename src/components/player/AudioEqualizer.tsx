@@ -1,5 +1,4 @@
 import { useEffect, useRef, useCallback } from 'react';
-import { audioPlayer } from '@/services/audio/AudioPlayerService';
 
 interface AudioEqualizerProps {
   isPlaying: boolean;
@@ -8,13 +7,21 @@ interface AudioEqualizerProps {
 export function AudioEqualizer({ isPlaying }: AudioEqualizerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationRef = useRef<number>(0);
-  const analyserRef = useRef<AnalyserNode | null>(null);
+  const barsRef = useRef<number[]>([]);
+  const targetBarsRef = useRef<number[]>([]);
+  const timeRef = useRef<number>(0);
+
+  const BAR_COUNT = 24;
+
+  // Initialize bars
+  useEffect(() => {
+    barsRef.current = Array(BAR_COUNT).fill(0);
+    targetBarsRef.current = Array(BAR_COUNT).fill(0);
+  }, []);
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
-    const analyser = analyserRef.current;
-
-    if (!canvas || !analyser) {
+    if (!canvas) {
       animationRef.current = requestAnimationFrame(draw);
       return;
     }
@@ -22,72 +29,115 @@ export function AudioEqualizer({ isPlaying }: AudioEqualizerProps) {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const bufferLength = analyser.frequencyBinCount;
-    const dataArray = new Uint8Array(bufferLength);
-    analyser.getByteFrequencyData(dataArray);
+    const rect = canvas.getBoundingClientRect();
+    const width = rect.width;
+    const height = rect.height;
 
     // Clear canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+    // Update time
+    timeRef.current += 0.05;
+
     // Calculate bar dimensions
-    const barCount = 32; // Number of bars to display
-    const barWidth = (canvas.width / barCount) - 2;
-    const barGap = 2;
-    const maxBarHeight = canvas.height - 20;
+    const barWidth = (width / BAR_COUNT) - 3;
+    const barGap = 3;
+    const maxBarHeight = height - 30;
 
-    // Sample data for the number of bars we want
-    const step = Math.floor(bufferLength / barCount);
+    // Update target values when playing
+    if (isPlaying) {
+      for (let i = 0; i < BAR_COUNT; i++) {
+        // Create more natural frequency distribution
+        // Lower frequencies (left) should be more prominent but not overwhelming
+        // Mid frequencies should have good presence
+        // High frequencies should be more subtle
 
-    for (let i = 0; i < barCount; i++) {
-      // Get average of frequencies in this range
-      let sum = 0;
-      for (let j = 0; j < step; j++) {
-        sum += dataArray[i * step + j];
+        const normalizedIndex = i / BAR_COUNT;
+
+        // Base amplitude varies by frequency band
+        let baseAmplitude;
+        if (normalizedIndex < 0.15) {
+          // Sub-bass and bass (left bars) - moderate height
+          baseAmplitude = 0.5 + Math.random() * 0.35;
+        } else if (normalizedIndex < 0.4) {
+          // Low-mid frequencies - highest activity
+          baseAmplitude = 0.6 + Math.random() * 0.4;
+        } else if (normalizedIndex < 0.7) {
+          // Mid frequencies - good presence
+          baseAmplitude = 0.4 + Math.random() * 0.45;
+        } else {
+          // High frequencies - more subtle
+          baseAmplitude = 0.2 + Math.random() * 0.4;
+        }
+
+        // Add some wave motion for visual interest
+        const wave = Math.sin(timeRef.current * 2 + i * 0.3) * 0.15;
+        const wave2 = Math.sin(timeRef.current * 3.7 + i * 0.5) * 0.1;
+
+        targetBarsRef.current[i] = Math.max(0.05, Math.min(1, baseAmplitude + wave + wave2));
       }
-      const value = sum / step;
-
-      // Calculate bar height (with minimum height when playing)
-      const barHeight = Math.max(
-        isPlaying ? 4 : 0,
-        (value / 255) * maxBarHeight
-      );
-
-      const x = i * (barWidth + barGap) + barGap;
-      const y = canvas.height - barHeight;
-
-      // Create gradient for each bar
-      const gradient = ctx.createLinearGradient(x, y, x, canvas.height);
-      gradient.addColorStop(0, '#10b981'); // emerald-500
-      gradient.addColorStop(0.5, '#34d399'); // emerald-400
-      gradient.addColorStop(1, '#6ee7b7'); // emerald-300
-
-      // Draw bar with rounded top
-      ctx.fillStyle = gradient;
-      ctx.beginPath();
-      ctx.roundRect(x, y, barWidth, barHeight, [4, 4, 0, 0]);
-      ctx.fill();
-
-      // Add glow effect for taller bars
-      if (barHeight > maxBarHeight * 0.7) {
-        ctx.shadowColor = '#10b981';
-        ctx.shadowBlur = 10;
-        ctx.fill();
-        ctx.shadowBlur = 0;
+    } else {
+      // When paused, bars should go down
+      for (let i = 0; i < BAR_COUNT; i++) {
+        targetBarsRef.current[i] = 0.02;
       }
     }
+
+    // Smooth interpolation towards target values
+    const smoothing = isPlaying ? 0.15 : 0.08;
+    for (let i = 0; i < BAR_COUNT; i++) {
+      barsRef.current[i] += (targetBarsRef.current[i] - barsRef.current[i]) * smoothing;
+    }
+
+    // Draw bars
+    for (let i = 0; i < BAR_COUNT; i++) {
+      const barHeight = Math.max(4, barsRef.current[i] * maxBarHeight);
+      const x = i * (barWidth + barGap) + barGap;
+      const y = height - barHeight - 10;
+
+      // Create gradient for each bar
+      const gradient = ctx.createLinearGradient(x, y, x, height - 10);
+
+      // Color intensity based on height
+      const intensity = barsRef.current[i];
+      if (intensity > 0.7) {
+        gradient.addColorStop(0, '#34d399'); // emerald-400
+        gradient.addColorStop(0.5, '#10b981'); // emerald-500
+        gradient.addColorStop(1, '#059669'); // emerald-600
+      } else if (intensity > 0.4) {
+        gradient.addColorStop(0, '#10b981'); // emerald-500
+        gradient.addColorStop(1, '#047857'); // emerald-700
+      } else {
+        gradient.addColorStop(0, '#059669'); // emerald-600
+        gradient.addColorStop(1, '#065f46'); // emerald-800
+      }
+
+      ctx.fillStyle = gradient;
+      ctx.beginPath();
+      ctx.roundRect(x, y, barWidth, barHeight, [3, 3, 0, 0]);
+      ctx.fill();
+    }
+
+    // Draw reflection (subtle)
+    ctx.globalAlpha = 0.15;
+    for (let i = 0; i < BAR_COUNT; i++) {
+      const barHeight = Math.max(2, barsRef.current[i] * maxBarHeight * 0.3);
+      const x = i * (barWidth + barGap) + barGap;
+      const y = height - 8;
+
+      const gradient = ctx.createLinearGradient(x, y, x, y + barHeight);
+      gradient.addColorStop(0, '#10b981');
+      gradient.addColorStop(1, 'transparent');
+
+      ctx.fillStyle = gradient;
+      ctx.fillRect(x, y, barWidth, barHeight);
+    }
+    ctx.globalAlpha = 1;
 
     animationRef.current = requestAnimationFrame(draw);
   }, [isPlaying]);
 
   useEffect(() => {
-    // Get analyser node from audio player
-    const analyser = audioPlayer.getAnalyserNode();
-    analyserRef.current = analyser;
-
-    // Resume audio context if needed
-    audioPlayer.resumeAudioContext();
-
-    // Start animation
     animationRef.current = requestAnimationFrame(draw);
 
     return () => {
@@ -104,11 +154,12 @@ export function AudioEqualizer({ isPlaying }: AudioEqualizerProps) {
 
     const resizeCanvas = () => {
       const rect = canvas.getBoundingClientRect();
-      canvas.width = rect.width * window.devicePixelRatio;
-      canvas.height = rect.height * window.devicePixelRatio;
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = rect.width * dpr;
+      canvas.height = rect.height * dpr;
       const ctx = canvas.getContext('2d');
       if (ctx) {
-        ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+        ctx.scale(dpr, dpr);
       }
     };
 
