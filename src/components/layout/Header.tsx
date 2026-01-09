@@ -6,18 +6,27 @@ interface HeaderProps {
   title: string;
   subtitle?: string;
   showBack?: boolean;
+  backPath?: string;
   actions?: ReactNode;
 }
 
-export function Header({ title, subtitle, showBack = false, actions }: HeaderProps) {
+export function Header({ title, subtitle, showBack = false, backPath, actions }: HeaderProps) {
   const navigate = useNavigate();
+
+  const handleBack = () => {
+    if (backPath) {
+      navigate(backPath);
+    } else {
+      navigate(-1);
+    }
+  };
 
   return (
     <header className="sticky top-0 z-30 bg-slate-900/95 backdrop-blur-sm border-b border-slate-700 safe-area-top">
       <div className="flex items-center h-14 px-4 gap-3">
         {showBack && (
           <button
-            onClick={() => navigate(-1)}
+            onClick={handleBack}
             className="p-2 -ml-2 text-slate-400 hover:text-white transition-colors touch-manipulation"
           >
             <ArrowLeft className="w-5 h-5" />

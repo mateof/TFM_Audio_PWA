@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect, useCallback } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Search, Star, Radio, FolderOpen, ChevronRight, HardDrive } from 'lucide-react';
 import { Header } from '@/components/layout/Header';
 import { Input } from '@/components/common/Input';
@@ -10,11 +10,29 @@ import type { Channel, ChannelFolder } from '@/types/models';
 
 type Tab = 'all' | 'favorites' | 'folders' | 'local';
 
+const validTabs: Tab[] = ['all', 'favorites', 'folders', 'local'];
+
 export function ChannelsPage() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { addToast } = useUiStore();
 
-  const [activeTab, setActiveTab] = useState<Tab>('all');
+  // Get tab from URL or default to 'all'
+  const urlTab = searchParams.get('tab') as Tab | null;
+  const initialTab = urlTab && validTabs.includes(urlTab) ? urlTab : 'all';
+
+  const [activeTab, setActiveTabState] = useState<Tab>(initialTab);
+
+  const setActiveTab = useCallback((tab: Tab) => {
+    setActiveTabState(tab);
+    const params = new URLSearchParams(searchParams);
+    if (tab === 'all') {
+      params.delete('tab');
+    } else {
+      params.set('tab', tab);
+    }
+    setSearchParams(params, { replace: true });
+  }, [searchParams, setSearchParams]);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [channels, setChannels] = useState<Channel[]>([]);

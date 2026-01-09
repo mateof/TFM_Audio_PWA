@@ -50,12 +50,18 @@ export function LocalFilesPage() {
   const { play } = useAudioPlayer();
   const activeDownloads = useDownloadStore((state) => state.activeDownloads);
 
+  // Breadcrumb type
+  interface FolderBreadcrumb {
+    path: string;
+    name: string;
+  }
+
   // State
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [files, setFiles] = useState<ChannelFile[]>([]);
   const [currentPath, setCurrentPath] = useState('');
-  const [parentPath, setParentPath] = useState<string | null>(null);
+  const [folderPath, setFolderPath] = useState<FolderBreadcrumb[]>([]);
   const [selectedTrack, setSelectedTrack] = useState<Track | null>(null);
   const [cachedTrackIds, setCachedTrackIds] = useState<Set<string>>(new Set());
 
@@ -147,6 +153,21 @@ export function LocalFilesPage() {
 
   // Get current path from URL params
   const pathParam = searchParams.get('path') || '';
+  const breadcrumbsParam = searchParams.get('breadcrumbs');
+
+  // Initialize folder path from URL
+  useEffect(() => {
+    if (breadcrumbsParam) {
+      try {
+        const parsed = JSON.parse(decodeURIComponent(breadcrumbsParam));
+        setFolderPath(parsed);
+      } catch {
+        setFolderPath([]);
+      }
+    } else {
+      setFolderPath([]);
+    }
+  }, [breadcrumbsParam]);
 
   // Audio extensions for client-side filtering
   const audioExtensions = ['mp3', 'flac', 'wav', 'ogg', 'opus', 'aac', 'm4a', 'wma', 'ape'];
@@ -243,7 +264,6 @@ export function LocalFilesPage() {
       const filteredData = filterByExtension(result.files);
 
       setCurrentPath(result.currentPath);
-      setParentPath(result.parentPath);
 
       if (reset) {
         setFiles(filteredData);
@@ -310,24 +330,30 @@ export function LocalFilesPage() {
 
   const handleFileClick = (file: ChannelFile) => {
     if (file.category === 'Folder') {
+      const newPath = [...folderPath, { path: file.path, name: file.name }];
       const params = new URLSearchParams(searchParams);
       params.set('path', file.path);
+      params.set('breadcrumbs', encodeURIComponent(JSON.stringify(newPath)));
       setSearchParams(params);
     } else if (file.category === 'Audio') {
       playAudioFile(file);
     }
   };
 
-  const navigateToParent = () => {
-    if (parentPath !== null) {
-      const params = new URLSearchParams(searchParams);
-      if (parentPath) {
-        params.set('path', parentPath);
-      } else {
-        params.delete('path');
-      }
-      setSearchParams(params);
+  const navigateToFolder = (index: number) => {
+    const params = new URLSearchParams(searchParams);
+
+    if (index === -1) {
+      // Navigate to root
+      params.delete('path');
+      params.delete('breadcrumbs');
+    } else {
+      const newPath = folderPath.slice(0, index + 1);
+      params.set('path', newPath[newPath.length - 1].path);
+      params.set('breadcrumbs', encodeURIComponent(JSON.stringify(newPath)));
     }
+
+    setSearchParams(params);
   };
 
   const playAudioFile = async (file: ChannelFile) => {
@@ -391,6 +417,7 @@ export function LocalFilesPage() {
         title={folderName}
         subtitle={`${totalCount} files`}
         showBack
+        backPath="/channels?tab=local"
       />
 
       {/* Toolbar */}
@@ -520,18 +547,27 @@ export function LocalFilesPage() {
         </div>
       )}
 
-      {/* Breadcrumb / Parent navigation */}
-      {pathParam && (
-        <div className="flex items-center gap-2 px-4 py-2 text-sm bg-slate-800/50 border-b border-slate-700">
+      {/* Breadcrumb */}
+      {folderPath.length > 0 && (
+        <div className="flex items-center gap-2 px-4 py-2 text-sm overflow-x-auto no-scrollbar bg-slate-800/50">
           <button
-            onClick={navigateToParent}
-            className="flex items-center gap-2 text-emerald-400 hover:underline"
+            onClick={() => navigateToFolder(-1)}
+            className="text-emerald-400 hover:underline whitespace-nowrap flex items-center gap-1"
           >
             <HardDrive className="w-4 h-4" />
-            <span>← Back</span>
+            Root
           </button>
-          <span className="text-slate-500">|</span>
-          <span className="text-slate-400 truncate">{currentPath}</span>
+          {folderPath.map((folder, index) => (
+            <div key={folder.path} className="flex items-center gap-2">
+              <ChevronRight className="w-4 h-4 text-slate-500 flex-shrink-0" />
+              <button
+                onClick={() => navigateToFolder(index)}
+                className={`whitespace-nowrap ${index === folderPath.length - 1 ? 'text-white' : 'text-emerald-400 hover:underline'}`}
+              >
+                {folder.name}
+              </button>
+            </div>
+          ))}
         </div>
       )}
 

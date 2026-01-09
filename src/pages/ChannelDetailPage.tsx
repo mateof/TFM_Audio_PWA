@@ -443,6 +443,7 @@ export function ChannelDetailPage() {
         title={channel?.name || 'Channel'}
         subtitle={channel ? `${totalCount} files` : undefined}
         showBack
+        backPath="/channels"
       />
 
       {/* Toolbar */}
