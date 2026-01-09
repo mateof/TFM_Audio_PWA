@@ -12,6 +12,7 @@ import { PlaylistDetailPage } from '@/pages/PlaylistDetailPage';
 import { DownloadsPage } from '@/pages/DownloadsPage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { LoadingScreen } from '@/components/common/Spinner';
+import { PWAUpdatePrompt } from '@/components/common/PWAUpdatePrompt';
 
 import { isServerConfigured } from '@/db/database';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -100,6 +101,7 @@ export default function App() {
       <BrowserRouter basename={basename}>
         <AppContent />
       </BrowserRouter>
+      <PWAUpdatePrompt />
     </QueryClientProvider>
   );
 }
