@@ -18,7 +18,14 @@ export function AudioEqualizer({ isPlaying }: AudioEqualizerProps) {
   const fallbackTargetsRef = useRef<number[]>([]);
   const timeRef = useRef<number>(0);
 
-  const BAR_COUNT = 32;
+  const BAR_COUNT = 31;
+
+  // Standard ISO 31-band equalizer frequencies (Hz)
+  const ISO_FREQUENCIES = [
+    20, 25, 31.5, 40, 50, 63, 80, 100, 125, 160,
+    200, 250, 315, 400, 500, 630, 800, 1000, 1250, 1600,
+    2000, 2500, 3150, 4000, 5000, 6300, 8000, 10000, 12500, 16000, 20000
+  ];
 
   // Initialize visualizer on mount
   useEffect(() => {
@@ -70,55 +77,58 @@ export function AudioEqualizer({ isPlaying }: AudioEqualizerProps) {
       analyser.getByteFrequencyData(dataArray);
 
       const frequencyBinCount = analyser.frequencyBinCount;
+      // Get actual sample rate from AudioContext, fallback to 44100
+      const sampleRate = analyser.context?.sampleRate || 44100;
+      const binWidth = sampleRate / (analyser.fftSize || 4096);
 
-      // Logarithmic frequency mapping (like human hearing)
-      // Bass on left, mids in middle, treble on right
-      const minFreq = 60;    // Hz - lowest frequency to show
-      const maxFreq = 14000; // Hz - highest frequency to show
-      const sampleRate = 44100;
-      const binWidth = sampleRate / (analyser.fftSize || 256);
-
+      // Each bar represents a specific ISO frequency
       for (let i = 0; i < BAR_COUNT; i++) {
-        // Logarithmic interpolation between min and max frequency
-        const freqLow = minFreq * Math.pow(maxFreq / minFreq, i / BAR_COUNT);
-        const freqHigh = minFreq * Math.pow(maxFreq / minFreq, (i + 1) / BAR_COUNT);
+        const centerFreq = ISO_FREQUENCIES[i];
 
-        // Convert frequencies to bin indices
-        const binLow = Math.max(0, Math.floor(freqLow / binWidth));
-        const binHigh = Math.min(frequencyBinCount - 1, Math.ceil(freqHigh / binWidth));
+        // Calculate the bin index for this frequency
+        const binIndex = Math.round(centerFreq / binWidth);
 
-        // Average the values in this frequency range
-        let sum = 0;
+        // Get value from the bin (and adjacent bins for smoothing)
+        let value = 0;
         let count = 0;
-        let maxVal = 0;
-        for (let j = binLow; j <= binHigh; j++) {
-          sum += dataArray[j];
-          maxVal = Math.max(maxVal, dataArray[j]);
-          count++;
+
+        // Calculate bandwidth for this frequency (Q factor ~4.3 for 1/3 octave)
+        // Lower frequencies need narrower sampling, higher can be wider
+        const bandwidth = centerFreq / 4.3;
+        const binsToSample = Math.max(1, Math.round(bandwidth / binWidth));
+        const range = Math.min(binsToSample, 10); // Cap at 10 bins
+
+        for (let j = Math.max(0, binIndex - range); j <= Math.min(frequencyBinCount - 1, binIndex + range); j++) {
+          // Weight center bin more heavily
+          const distance = Math.abs(j - binIndex);
+          const weight = Math.max(0.5, 1 - distance / (range + 1));
+          value += dataArray[j] * weight;
+          count += weight;
         }
 
-        const average = count > 0 ? sum / count : 0;
-        const combined = (average * 0.5 + maxVal * 0.5);
+        value = count > 0 ? value / count : 0;
 
-        // Normalize
-        let normalized = combined / 255;
+        // Normalize to 0-1
+        let normalized = value / 255;
 
-        // Apply frequency-dependent boost
-        // Higher frequencies naturally have less energy, so boost them more
-        const barPosition = i / BAR_COUNT;
+        // Apply frequency-dependent boost (higher frequencies have less energy)
         let boost = 1.0;
-        if (barPosition > 0.7) {
-          // Treble boost (last 30% of bars)
-          boost = 1.5 + (barPosition - 0.7) * 2.5; // 1.5x to 2.25x
-        } else if (barPosition > 0.4) {
-          // Mid-high boost
-          boost = 1.2 + (barPosition - 0.4) * 1.0; // 1.2x to 1.5x
+        if (centerFreq >= 8000) {
+          boost = 2.5; // Very high frequencies
+        } else if (centerFreq >= 4000) {
+          boost = 2.0; // High frequencies
+        } else if (centerFreq >= 2000) {
+          boost = 1.6; // Upper mids
+        } else if (centerFreq >= 1000) {
+          boost = 1.3; // Mids
+        } else if (centerFreq >= 500) {
+          boost = 1.1; // Lower mids
         }
 
         normalized = normalized * boost;
 
         // Apply curve for better visual dynamics
-        const curved = Math.pow(normalized, 0.75);
+        const curved = Math.pow(normalized, 0.7);
 
         barValues.push(Math.min(1, curved));
       }

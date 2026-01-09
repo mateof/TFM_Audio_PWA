@@ -41,9 +41,9 @@ class AudioPlayerService {
 
       // Create analyser with good settings for visualization
       this.analyserNode = this.audioContext.createAnalyser();
-      this.analyserNode.fftSize = 256; // More frequency bins for better resolution
-      this.analyserNode.smoothingTimeConstant = 0.6;
-      this.analyserNode.minDecibels = -85;
+      this.analyserNode.fftSize = 4096; // High resolution for accurate frequency bands (~10Hz per bin)
+      this.analyserNode.smoothingTimeConstant = 0.75;
+      this.analyserNode.minDecibels = -90;
       this.analyserNode.maxDecibels = -10;
 
       // Connect the stream
