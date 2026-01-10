@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams } from 'react-router-dom';
-import { Play, Shuffle, Download, Music, Trash2, Check, CloudOff, Cloud, WifiOff, GripVertical } from 'lucide-react';
+import { Play, Shuffle, Download, Music, Trash2, Check, CloudOff, Cloud, WifiOff, GripVertical, ChevronUp } from 'lucide-react';
 import { Header } from '@/components/layout/Header';
 import { Button } from '@/components/common/Button';
 import { LoadingScreen } from '@/components/common/Spinner';
@@ -33,12 +33,37 @@ export function PlaylistDetailPage() {
   const [togglingOffline, setTogglingOffline] = useState(false);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const [isScrolled, setIsScrolled] = useState(false);
+  const [showScrollTop, setShowScrollTop] = useState(false);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const headerInfoRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (id) {
       loadPlaylist();
     }
   }, [id]);
+
+  // Scroll event handler for compact header and scroll-to-top button
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const handleScroll = () => {
+      const scrollTop = container.scrollTop;
+      // Show compact header when scrolled past 150px (approximate header info height)
+      setIsScrolled(scrollTop > 150);
+      // Show scroll to top button when scrolled past 300px
+      setShowScrollTop(scrollTop > 300);
+    };
+
+    container.addEventListener('scroll', handleScroll, { passive: true });
+    return () => container.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  const scrollToTop = useCallback(() => {
+    scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+  }, []);
 
   // Refresh cache status when downloads complete
   useEffect(() => {
@@ -307,80 +332,120 @@ export function PlaylistDetailPage() {
   const cachedCount = cachedTrackIds.size;
 
   return (
-    <div className="flex flex-col min-h-screen">
+    <div className="flex flex-col h-screen overflow-hidden">
       <Header title={playlist.name} subtitle={playlist.description} showBack />
 
-      {/* Offline mode indicator */}
-      {isOfflineMode && (
-        <div className="flex items-center gap-2 px-4 py-2 bg-amber-500/20 text-amber-400 text-sm">
-          <WifiOff className="w-4 h-4" />
-          <span>Offline mode</span>
+      {/* Compact sticky header - appears when scrolled */}
+      {isScrolled && (
+        <div className="sticky top-14 z-20 bg-slate-900/95 backdrop-blur-sm border-b border-slate-700 px-4 py-2">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-cyan-500 rounded-lg flex items-center justify-center flex-shrink-0">
+              <Music className="w-5 h-5 text-white" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-white font-semibold text-sm truncate">{playlist.name}</p>
+              <p className="text-slate-400 text-xs">
+                {playlist.trackCount} tracks • {formatDuration(totalDuration)}
+              </p>
+            </div>
+            <button
+              onClick={handlePlayAll}
+              disabled={!playlist.tracks.length}
+              className="p-2 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed rounded-full transition-colors"
+            >
+              <Play className="w-4 h-4 text-white" fill="currentColor" />
+            </button>
+            <button
+              onClick={handleShufflePlay}
+              disabled={!playlist.tracks.length}
+              className="p-2 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed rounded-full transition-colors"
+            >
+              <Shuffle className="w-4 h-4 text-white" />
+            </button>
+            <button
+              onClick={handleToggleOffline}
+              disabled={isOfflineMode || togglingOffline}
+              className={`p-2 ${isOffline ? 'bg-emerald-500 hover:bg-emerald-600' : 'bg-slate-700 hover:bg-slate-600'} disabled:opacity-50 disabled:cursor-not-allowed rounded-full transition-colors`}
+            >
+              {isOffline ? <CloudOff className="w-4 h-4 text-white" /> : <Cloud className="w-4 h-4 text-white" />}
+            </button>
+          </div>
         </div>
       )}
 
-      {/* Playlist Info & Actions */}
-      <div className="p-4 bg-gradient-to-b from-slate-800 to-transparent">
-        <div className="flex items-center gap-4 mb-4">
-          <div className="w-24 h-24 bg-gradient-to-br from-emerald-500 to-cyan-500 rounded-xl flex items-center justify-center shadow-lg relative">
-            <Music className="w-10 h-10 text-white" />
-            {isOffline && (
-              <div className="absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center border-2 border-slate-900">
-                <CloudOff className="w-4 h-4 text-white" />
-              </div>
-            )}
+      {/* Scrollable content */}
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto">
+        {/* Offline mode indicator */}
+        {isOfflineMode && (
+          <div className="flex items-center gap-2 px-4 py-2 bg-amber-500/20 text-amber-400 text-sm">
+            <WifiOff className="w-4 h-4" />
+            <span>Offline mode</span>
           </div>
-          <div className="flex-1">
-            <p className="text-white font-bold text-xl">{playlist.name}</p>
-            <p className="text-slate-400 text-sm">
-              {playlist.trackCount} tracks • {formatDuration(totalDuration)}
-            </p>
-            <p className="text-slate-500 text-xs">{formatFileSize(totalSize)}</p>
-            {cachedCount > 0 && (
-              <p className="text-emerald-400 text-xs mt-1">
-                {cachedCount}/{playlist.tracks.length} cached
+        )}
+
+        {/* Playlist Info & Actions */}
+        <div ref={headerInfoRef} className="p-4 bg-gradient-to-b from-slate-800 to-transparent">
+          <div className="flex items-center gap-4 mb-4">
+            <div className="w-24 h-24 bg-gradient-to-br from-emerald-500 to-cyan-500 rounded-xl flex items-center justify-center shadow-lg relative">
+              <Music className="w-10 h-10 text-white" />
+              {isOffline && (
+                <div className="absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center border-2 border-slate-900">
+                  <CloudOff className="w-4 h-4 text-white" />
+                </div>
+              )}
+            </div>
+            <div className="flex-1">
+              <p className="text-white font-bold text-xl">{playlist.name}</p>
+              <p className="text-slate-400 text-sm">
+                {playlist.trackCount} tracks • {formatDuration(totalDuration)}
               </p>
-            )}
+              <p className="text-slate-500 text-xs">{formatFileSize(totalSize)}</p>
+              {cachedCount > 0 && (
+                <p className="text-emerald-400 text-xs mt-1">
+                  {cachedCount}/{playlist.tracks.length} cached
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex flex-wrap gap-3">
+            <Button
+              variant="primary"
+              icon={<Play className="w-4 h-4" fill="currentColor" />}
+              onClick={handlePlayAll}
+              disabled={!playlist.tracks.length}
+              className="flex-1"
+            >
+              Play All
+            </Button>
+            <Button
+              variant="secondary"
+              icon={<Shuffle className="w-4 h-4" />}
+              onClick={handleShufflePlay}
+              disabled={!playlist.tracks.length}
+            >
+              Shuffle
+            </Button>
+          </div>
+
+          {/* Offline toggle button */}
+          <div className="flex flex-wrap gap-3 mt-3">
+            <Button
+              variant={isOffline ? 'primary' : 'secondary'}
+              icon={isOffline ? <CloudOff className="w-4 h-4" /> : <Cloud className="w-4 h-4" />}
+              onClick={handleToggleOffline}
+              loading={togglingOffline}
+              disabled={isOfflineMode}
+              className="flex-1"
+            >
+              {isOffline ? 'Remove Offline' : 'Save Offline'}
+            </Button>
           </div>
         </div>
 
-        {/* Action Buttons */}
-        <div className="flex flex-wrap gap-3">
-          <Button
-            variant="primary"
-            icon={<Play className="w-4 h-4" fill="currentColor" />}
-            onClick={handlePlayAll}
-            disabled={!playlist.tracks.length}
-            className="flex-1"
-          >
-            Play All
-          </Button>
-          <Button
-            variant="secondary"
-            icon={<Shuffle className="w-4 h-4" />}
-            onClick={handleShufflePlay}
-            disabled={!playlist.tracks.length}
-          >
-            Shuffle
-          </Button>
-        </div>
-
-        {/* Offline toggle button */}
-        <div className="flex flex-wrap gap-3 mt-3">
-          <Button
-            variant={isOffline ? 'primary' : 'secondary'}
-            icon={isOffline ? <CloudOff className="w-4 h-4" /> : <Cloud className="w-4 h-4" />}
-            onClick={handleToggleOffline}
-            loading={togglingOffline}
-            disabled={isOfflineMode}
-            className="flex-1"
-          >
-            {isOffline ? 'Remove Offline' : 'Save Offline'}
-          </Button>
-        </div>
-      </div>
-
-      {/* Track List */}
-      <div className="flex-1 overflow-y-auto">
+        {/* Track List */}
+        <div>
         {playlist.tracks.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 text-slate-400">
             <Music className="w-12 h-12 mb-4 opacity-50" />
@@ -482,7 +547,19 @@ export function PlaylistDetailPage() {
             })}
           </div>
         )}
+        </div>
       </div>
+
+      {/* Scroll to top button */}
+      {showScrollTop && (
+        <button
+          onClick={scrollToTop}
+          className="fixed bottom-24 right-4 p-3 bg-emerald-500 hover:bg-emerald-600 rounded-full shadow-lg transition-all z-30"
+          aria-label="Scroll to top"
+        >
+          <ChevronUp className="w-5 h-5 text-white" />
+        </button>
+      )}
     </div>
   );
 }
