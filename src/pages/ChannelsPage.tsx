@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Search, Star, Radio, FolderOpen, ChevronRight, HardDrive } from 'lucide-react';
+import { Search, Star, Radio, FolderOpen, ChevronRight, HardDrive, X } from 'lucide-react';
 import { Header } from '@/components/layout/Header';
 import { Input } from '@/components/common/Input';
 import { LoadingScreen } from '@/components/common/Spinner';
@@ -39,6 +39,32 @@ export function ChannelsPage() {
   const [favorites, setFavorites] = useState<Channel[]>([]);
   const [folders, setFolders] = useState<ChannelFolder[]>([]);
   const [ungroupedChannels, setUngroupedChannels] = useState<Channel[]>([]);
+
+  // Scroll state for compact header
+  const [isScrolled, setIsScrolled] = useState(false);
+  const [searchExpanded, setSearchExpanded] = useState(false);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Scroll detection
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const handleScroll = () => {
+      setIsScrolled(container.scrollTop > 20);
+    };
+
+    container.addEventListener('scroll', handleScroll, { passive: true });
+    return () => container.removeEventListener('scroll', handleScroll);
+  }, [loading]);
+
+  // Focus search input when expanded
+  useEffect(() => {
+    if (searchExpanded && searchInputRef.current) {
+      searchInputRef.current.focus();
+    }
+  }, [searchExpanded]);
 
   useEffect(() => {
     loadData();
@@ -95,38 +121,73 @@ export function ChannelsPage() {
   ];
 
   return (
-    <div className="flex flex-col min-h-screen">
+    <div className="flex flex-col h-screen overflow-hidden">
       <Header title="Channels" />
 
-      {/* Search */}
-      <div className="px-4 py-3">
-        <Input
-          placeholder="Search channels..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          icon={<Search className="w-4 h-4" />}
-        />
-      </div>
+      {/* Sticky header with search and tabs */}
+      <div className="sticky top-0 z-10 bg-slate-900">
+        {/* Search - full when not scrolled or expanded, compact button when scrolled */}
+        {!isScrolled || searchExpanded ? (
+          <div className="px-4 py-3 flex items-center gap-2">
+            <div className="flex-1">
+              <Input
+                ref={searchInputRef}
+                placeholder="Search channels..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                icon={<Search className="w-4 h-4" />}
+              />
+            </div>
+            {isScrolled && searchExpanded && (
+              <button
+                onClick={() => {
+                  setSearchExpanded(false);
+                  setSearchQuery('');
+                }}
+                className="p-2 text-slate-400 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className="px-4 py-2 flex items-center gap-2">
+            <button
+              onClick={() => setSearchExpanded(true)}
+              className={`p-2 rounded-lg transition-colors ${
+                searchQuery ? 'bg-emerald-500 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'
+              }`}
+            >
+              <Search className="w-5 h-5" />
+            </button>
+            {searchQuery && (
+              <span className="text-sm text-emerald-400 truncate flex-1">
+                "{searchQuery}"
+              </span>
+            )}
+          </div>
+        )}
 
-      {/* Tabs */}
-      <div className="flex border-b border-slate-700">
-        {tabs.map((tab) => (
-          <button
-            key={tab.key}
-            onClick={() => setActiveTab(tab.key)}
-            className={`flex-1 py-3 text-sm font-medium transition-colors ${
-              activeTab === tab.key
-                ? 'text-emerald-400 border-b-2 border-emerald-400'
-                : 'text-slate-400'
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
+        {/* Tabs - always visible */}
+        <div className="flex border-b border-slate-700">
+          {tabs.map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={`flex-1 py-3 text-sm font-medium transition-colors ${
+                activeTab === tab.key
+                  ? 'text-emerald-400 border-b-2 border-emerald-400'
+                  : 'text-slate-400'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto">
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto">
         {loading ? (
           <LoadingScreen message="Loading channels..." />
         ) : activeTab === 'all' ? (

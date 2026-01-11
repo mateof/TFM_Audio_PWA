@@ -135,3 +135,12 @@ export function buildStreamUrlSync(channelId: string, fileId: string, fileName?:
   }
   return url;
 }
+
+// Synchronous version for local files that requires baseUrl to be pre-initialized
+export function buildLocalStreamUrlSync(filePath: string): string {
+  const baseUrl = apiClient.getBaseUrl();
+  if (!baseUrl) {
+    console.warn('buildLocalStreamUrlSync called before API client initialized');
+  }
+  return `${baseUrl}/api/mobile/stream/local?path=${encodeURIComponent(filePath)}`;
+}

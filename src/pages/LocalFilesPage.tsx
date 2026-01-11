@@ -635,16 +635,6 @@ export function LocalFilesPage() {
                       >
                         <Plus className="w-5 h-5" />
                       </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          playAudioFile(file);
-                        }}
-                        className="p-2 text-slate-500 hover:text-emerald-400 transition-colors"
-                        title="Play"
-                      >
-                        <Play className="w-5 h-5" />
-                      </button>
                     </>
                   )}
                   {file.category === 'Folder' && (

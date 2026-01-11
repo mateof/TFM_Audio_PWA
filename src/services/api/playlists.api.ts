@@ -1,4 +1,4 @@
-import { apiClient, buildStreamUrlSync } from './client';
+import { apiClient, buildStreamUrlSync, buildLocalStreamUrlSync } from './client';
 import type {
   Playlist,
   PlaylistDetail,
@@ -11,12 +11,37 @@ import type {
 
 // Ensure track has a valid streamUrl
 function ensureStreamUrl(track: Track): Track {
+  // Check if it's a local file - either by flag or by channelId
+  const isLocal = track.isLocalFile || track.channelId === 'local';
+
+  // For local files, we need a valid filePath
+  // The filePath might be in filePath field or in fileId field (depending on how server stores it)
+  const localPath = track.filePath || (isLocal ? track.fileId : null);
+
   if (!track.streamUrl || !track.streamUrl.startsWith('http')) {
+    if (isLocal && localPath) {
+      return {
+        ...track,
+        isLocalFile: true,
+        streamUrl: buildLocalStreamUrlSync(localPath)
+      };
+    }
+    // Otherwise build channel stream URL
     return {
       ...track,
       streamUrl: buildStreamUrlSync(track.channelId, track.fileId, track.fileName)
     };
   }
+
+  // Even if streamUrl exists, check if it's using the wrong endpoint for local files
+  if (isLocal && localPath && track.streamUrl.includes('/stream/tfm/')) {
+    return {
+      ...track,
+      isLocalFile: true,
+      streamUrl: buildLocalStreamUrlSync(localPath)
+    };
+  }
+
   return track;
 }
 

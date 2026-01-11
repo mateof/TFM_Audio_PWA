@@ -188,4 +188,6 @@ export interface AddTrackRequest {
   fileName: string;
   fileSize: number;
   streamUrl: string;
+  isLocalFile?: boolean;
+  filePath?: string;
 }
