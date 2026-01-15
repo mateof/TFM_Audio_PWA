@@ -126,6 +126,7 @@ export function PlayerOverlay() {
     togglePlayPause,
     next,
     previous,
+    skipToPrevious,
     seek,
     setVolume,
     toggleShuffle,
@@ -290,7 +291,8 @@ export function PlayerOverlay() {
       if (queue.length > 1) next();
     },
     onSwipeRight: () => {
-      if (queue.length > 1) previous();
+      // Use skipToPrevious to always go to previous track (not restart current)
+      if (queue.length > 1) skipToPrevious();
     },
     onSwipeDown: handleClose,
     threshold: 80,

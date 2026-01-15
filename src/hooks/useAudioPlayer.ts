@@ -45,6 +45,11 @@ export function useAudioPlayer() {
     await audioPlayer.previous();
   }, []);
 
+  // Skip to previous track without time check (for swipe gestures)
+  const skipToPrevious = useCallback(async () => {
+    await audioPlayer.skipToPrevious();
+  }, []);
+
   const seek = useCallback((position: number) => {
     audioPlayer.seek(position);
   }, []);
@@ -122,6 +127,7 @@ export function useAudioPlayer() {
     togglePlayPause,
     next,
     previous,
+    skipToPrevious,
     seek,
     seekPercent,
     setVolume,

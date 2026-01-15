@@ -25,6 +25,7 @@ export interface CachedTrackEntity {
   lastPlayedAt?: Date;
   blob: Blob;
   coverArt?: string; // Base64 data URL for album art
+  metadataExtracted?: boolean; // Flag to indicate metadata has been analyzed
 }
 
 export interface OfflinePlaylistEntity {

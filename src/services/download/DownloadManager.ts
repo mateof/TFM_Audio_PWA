@@ -3,6 +3,7 @@ import { cacheService } from '@/services/cache/CacheService';
 import { apiClient } from '@/services/api/client';
 import type { Track } from '@/types/models';
 import { create } from 'zustand';
+import * as mm from 'music-metadata';
 
 // Download store for reactive state
 interface DownloadState {
@@ -45,6 +46,52 @@ export const useDownloadStore = create<DownloadState>((set) => ({
 class DownloadManager {
   private isProcessing = false;
   private abortControllers = new Map<string, AbortController>();
+
+  // Extract metadata from audio blob
+  private async extractMetadata(blob: Blob): Promise<{
+    title?: string;
+    artist?: string;
+    album?: string;
+    duration?: number;
+    coverArt?: string;
+  }> {
+    try {
+      const buffer = await blob.arrayBuffer();
+      const uint8Array = new Uint8Array(buffer);
+      const metadata = await mm.parseBuffer(uint8Array, {
+        mimeType: blob.type || 'audio/mpeg',
+        size: blob.size
+      });
+
+      let coverArt: string | undefined;
+      if (metadata.common.picture && metadata.common.picture.length > 0) {
+        const pic = metadata.common.picture[0];
+        const base64 = this.arrayBufferToBase64(pic.data);
+        coverArt = `data:${pic.format};base64,${base64}`;
+      }
+
+      return {
+        title: metadata.common.title,
+        artist: metadata.common.artist,
+        album: metadata.common.album,
+        duration: metadata.format.duration,
+        coverArt
+      };
+    } catch (error) {
+      console.warn('Failed to extract metadata:', error);
+      return {};
+    }
+  }
+
+  // Helper to convert array buffer to base64
+  private arrayBufferToBase64(buffer: Uint8Array): string {
+    let binary = '';
+    const len = buffer.byteLength;
+    for (let i = 0; i < len; i++) {
+      binary += String.fromCharCode(buffer[i]);
+    }
+    return btoa(binary);
+  }
 
   // Add track to download queue
   async addToQueue(track: Track): Promise<void> {
@@ -260,6 +307,10 @@ class DownloadManager {
         console.log('Server returned partial content. Downloading in chunks...');
         const blob = await this.downloadInChunks(item, apiKey, totalSize, abortController.signal);
 
+        // Extract metadata from the downloaded file
+        console.log('Extracting metadata for:', item.fileName);
+        const metadata = await this.extractMetadata(blob);
+
         await db.cachedTracks.put({
           id: item.trackId,
           channelId: item.channelId,
@@ -268,11 +319,17 @@ class DownloadManager {
           fileSize: blob.size,
           streamUrl: item.streamUrl,
           cachedAt: new Date(),
-          blob
+          blob,
+          title: metadata.title,
+          artist: metadata.artist,
+          album: metadata.album,
+          duration: metadata.duration,
+          coverArt: metadata.coverArt,
+          metadataExtracted: true
         });
 
         await db.downloadQueue.delete(item.id!);
-        console.log('Download completed (chunked):', item.fileName, 'Size:', blob.size);
+        console.log('Download completed (chunked):', item.fileName, 'Size:', blob.size, 'Metadata:', metadata.title || 'none');
         useDownloadStore.getState().markCompleted(item.trackId);
         return;
       }
@@ -315,6 +372,10 @@ class DownloadManager {
         throw new Error(`Incomplete download: got ${blob.size} bytes, expected ${totalSize}`);
       }
 
+      // Extract metadata from the downloaded file
+      console.log('Extracting metadata for:', item.fileName);
+      const metadata = await this.extractMetadata(blob);
+
       await db.cachedTracks.put({
         id: item.trackId,
         channelId: item.channelId,
@@ -323,12 +384,18 @@ class DownloadManager {
         fileSize: blob.size,
         streamUrl: item.streamUrl,
         cachedAt: new Date(),
-        blob
+        blob,
+        title: metadata.title,
+        artist: metadata.artist,
+        album: metadata.album,
+        duration: metadata.duration,
+        coverArt: metadata.coverArt,
+        metadataExtracted: true
       });
 
       // Remove from queue (track is now in cache)
       await db.downloadQueue.delete(item.id!);
-      console.log('Download completed:', item.fileName, 'Size:', blob.size);
+      console.log('Download completed:', item.fileName, 'Size:', blob.size, 'Metadata:', metadata.title || 'none');
 
       useDownloadStore.getState().markCompleted(item.trackId);
     } catch (error) {
@@ -432,6 +499,64 @@ class DownloadManager {
   async clearQueue(): Promise<void> {
     await this.cancelAll();
     await db.downloadQueue.clear();
+  }
+
+  // Analyze existing cached tracks that don't have metadata extracted
+  async analyzeExistingTracks(onProgress?: (current: number, total: number) => void): Promise<number> {
+    // Get all tracks that haven't been analyzed yet
+    const tracksToAnalyze = await db.cachedTracks
+      .filter(track => !track.metadataExtracted)
+      .toArray();
+
+    if (tracksToAnalyze.length === 0) {
+      console.log('All tracks already have metadata extracted');
+      return 0;
+    }
+
+    console.log(`Analyzing ${tracksToAnalyze.length} tracks for metadata...`);
+    let analyzedCount = 0;
+
+    for (const track of tracksToAnalyze) {
+      try {
+        if (!track.blob) {
+          console.warn(`Track ${track.fileName} has no blob, skipping`);
+          continue;
+        }
+
+        const metadata = await this.extractMetadata(track.blob);
+
+        // Update the track with extracted metadata
+        await db.cachedTracks.update(track.id, {
+          title: metadata.title || track.title,
+          artist: metadata.artist || track.artist,
+          album: metadata.album || track.album,
+          duration: metadata.duration || track.duration,
+          coverArt: metadata.coverArt || track.coverArt,
+          metadataExtracted: true
+        });
+
+        analyzedCount++;
+        console.log(`Analyzed: ${track.fileName} -> ${metadata.title || 'no title'}`);
+
+        if (onProgress) {
+          onProgress(analyzedCount, tracksToAnalyze.length);
+        }
+      } catch (error) {
+        console.error(`Failed to analyze track ${track.fileName}:`, error);
+        // Mark as analyzed even if failed, to avoid infinite retries
+        await db.cachedTracks.update(track.id, { metadataExtracted: true });
+      }
+    }
+
+    console.log(`Metadata analysis complete. Analyzed ${analyzedCount} tracks.`);
+    return analyzedCount;
+  }
+
+  // Get count of tracks pending analysis
+  async getPendingAnalysisCount(): Promise<number> {
+    return db.cachedTracks
+      .filter(track => !track.metadataExtracted)
+      .count();
   }
 }
 

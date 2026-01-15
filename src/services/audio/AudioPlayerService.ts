@@ -510,6 +510,27 @@ class AudioPlayerService {
     await this.playAtIndex(prevIndex);
   }
 
+  // Skip to previous track without checking time (for swipe gestures)
+  async skipToPrevious(): Promise<void> {
+    const store = usePlayerStore.getState();
+    const { queue, currentIndex, repeatMode } = store;
+
+    if (queue.length === 0) return;
+
+    let prevIndex: number;
+
+    if (currentIndex > 0) {
+      prevIndex = currentIndex - 1;
+    } else if (repeatMode === 'all') {
+      prevIndex = queue.length - 1;
+    } else {
+      // Beginning of queue, do nothing or go to last if repeat all
+      return;
+    }
+
+    await this.playAtIndex(prevIndex);
+  }
+
   private async handleTrackEnd(): Promise<void> {
     const { repeatMode } = usePlayerStore.getState();
 

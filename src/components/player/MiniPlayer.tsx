@@ -2,9 +2,12 @@ import { Play, Pause, SkipForward, Music } from 'lucide-react';
 import { useAudioPlayer } from '@/hooks/useAudioPlayer';
 import { formatDuration } from '@/utils/format';
 import { useUiStore } from '@/stores/uiStore';
+import { useState, useEffect } from 'react';
+import { cacheService } from '@/services/cache/CacheService';
 
 export function MiniPlayer() {
   const setPlayerExpanded = useUiStore((s) => s.setPlayerExpanded);
+  const [coverArt, setCoverArt] = useState<string | null>(null);
   const {
     currentTrack,
     position,
@@ -15,6 +18,21 @@ export function MiniPlayer() {
     togglePlayPause,
     next
   } = useAudioPlayer();
+
+  // Load cover art when track changes
+  useEffect(() => {
+    if (!currentTrack) {
+      setCoverArt(null);
+      return;
+    }
+
+    const loadCoverArt = async () => {
+      const art = await cacheService.getCoverArt(currentTrack.fileId);
+      setCoverArt(art || null);
+    };
+
+    loadCoverArt();
+  }, [currentTrack?.fileId]);
 
   if (!currentTrack) return null;
 
@@ -47,8 +65,12 @@ export function MiniPlayer() {
 
       <div className="flex items-center h-16 px-4 gap-3">
         {/* Album art / icon */}
-        <div className="w-12 h-12 bg-slate-700 rounded-lg flex items-center justify-center flex-shrink-0">
-          <Music className="w-6 h-6 text-slate-400" />
+        <div className="w-12 h-12 bg-slate-700 rounded-lg flex items-center justify-center shrink-0 overflow-hidden">
+          {coverArt ? (
+            <img src={coverArt} alt="Cover" className="w-full h-full object-cover" />
+          ) : (
+            <Music className="w-6 h-6 text-slate-400" />
+          )}
         </div>
 
         {/* Track info */}

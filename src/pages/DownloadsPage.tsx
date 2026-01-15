@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
-import { Download, Music, Trash2, HardDrive, X, RotateCcw, Play } from 'lucide-react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { Download, Music, Trash2, HardDrive, X, RotateCcw, Play, Loader2, Search } from 'lucide-react';
 import { Header } from '@/components/layout/Header';
 import { Button } from '@/components/common/Button';
 import { LoadingScreen } from '@/components/common/Spinner';
@@ -18,6 +18,11 @@ export function DownloadsPage() {
   const [failedDownloads, setFailedDownloads] = useState<DownloadQueueEntity[]>([]);
   const [cachedTracks, setCachedTracks] = useState<CachedTrackEntity[]>([]);
   const [totalCacheSize, setTotalCacheSize] = useState(0);
+
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisProgress, setAnalysisProgress] = useState({ current: 0, total: 0 });
+  const [pendingAnalysis, setPendingAnalysis] = useState(0);
+  const analysisRunRef = useRef(false);
 
   const activeDownloads = useDownloadStore((state) => state.activeDownloads);
   const isProcessing = useDownloadStore((state) => state.isProcessing);
@@ -55,6 +60,42 @@ export function DownloadsPage() {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  // Check for tracks pending analysis
+  const checkPendingAnalysis = useCallback(async () => {
+    const count = await downloadManager.getPendingAnalysisCount();
+    setPendingAnalysis(count);
+    return count;
+  }, []);
+
+  // Auto-analyze tracks that don't have metadata
+  const analyzeExistingTracks = useCallback(async () => {
+    if (analysisRunRef.current) return;
+    analysisRunRef.current = true;
+    setIsAnalyzing(true);
+
+    try {
+      await downloadManager.analyzeExistingTracks((current, total) => {
+        setAnalysisProgress({ current, total });
+      });
+      await loadData();
+    } finally {
+      setIsAnalyzing(false);
+      analysisRunRef.current = false;
+      setPendingAnalysis(0);
+    }
+  }, [loadData]);
+
+  // Check for pending analysis on mount and auto-analyze
+  useEffect(() => {
+    const initAnalysis = async () => {
+      const count = await checkPendingAnalysis();
+      if (count > 0 && !analysisRunRef.current) {
+        analyzeExistingTracks();
+      }
+    };
+    initAnalysis();
+  }, [checkPendingAnalysis, analyzeExistingTracks]);
 
   // Refresh data when download state changes
   useEffect(() => {
@@ -168,12 +209,30 @@ export function DownloadsPage() {
             <p className="text-xs text-slate-400">{formatFileSize(totalCacheSize)}</p>
           </div>
         </div>
-        {cachedTracks.length > 0 && (
-          <Button variant="ghost" size="sm" onClick={handleClearCache}>
-            Clear All
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          {pendingAnalysis > 0 && !isAnalyzing && (
+            <Button variant="ghost" size="sm" onClick={analyzeExistingTracks}>
+              <Search className="w-4 h-4 mr-1" />
+              Analyze ({pendingAnalysis})
+            </Button>
+          )}
+          {cachedTracks.length > 0 && (
+            <Button variant="ghost" size="sm" onClick={handleClearCache}>
+              Clear All
+            </Button>
+          )}
+        </div>
       </div>
+
+      {/* Analysis progress */}
+      {isAnalyzing && (
+        <div className="px-4 py-2 bg-emerald-500/10 border-b border-emerald-500/20 flex items-center gap-3">
+          <Loader2 className="w-4 h-4 text-emerald-400 animate-spin" />
+          <p className="text-sm text-emerald-400">
+            Analyzing metadata... {analysisProgress.current}/{analysisProgress.total}
+          </p>
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="flex border-b border-slate-700">
@@ -378,15 +437,19 @@ function CachedTracksList({ tracks, onDelete, onPlay }: CachedTracksListProps) {
           onClick={() => onPlay(track)}
           className="w-full flex items-center gap-4 p-4 hover:bg-slate-800 transition-colors text-left"
         >
-          <div className="w-10 h-10 bg-emerald-500/20 rounded-lg flex items-center justify-center">
-            <Music className="w-5 h-5 text-emerald-400" />
+          <div className="w-12 h-12 bg-slate-700 rounded-lg flex items-center justify-center shrink-0 overflow-hidden">
+            {track.coverArt ? (
+              <img src={track.coverArt} alt="Cover" className="w-full h-full object-cover" />
+            ) : (
+              <Music className="w-5 h-5 text-emerald-400" />
+            )}
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm text-white truncate">
               {track.title || track.fileName}
             </p>
-            <p className="text-xs text-slate-400">
-              {track.channelName} • {formatFileSize(track.fileSize)} • {formatRelativeTime(track.cachedAt)}
+            <p className="text-xs text-slate-400 truncate">
+              {track.artist || track.channelName} • {formatFileSize(track.fileSize)}
             </p>
           </div>
           <div
