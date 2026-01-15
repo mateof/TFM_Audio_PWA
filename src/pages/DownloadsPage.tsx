@@ -4,7 +4,7 @@ import { Header } from '@/components/layout/Header';
 import { Button } from '@/components/common/Button';
 import { LoadingScreen } from '@/components/common/Spinner';
 import { db } from '@/db/database';
-import { formatFileSize, formatRelativeTime } from '@/utils/format';
+import { formatFileSize } from '@/utils/format';
 import { downloadManager, useDownloadStore } from '@/services/download/DownloadManager';
 import { useAudioPlayer } from '@/hooks/useAudioPlayer';
 import type { CachedTrackEntity, DownloadQueueEntity } from '@/db/database';
