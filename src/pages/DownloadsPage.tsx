@@ -3,11 +3,14 @@ import { Download, Music, Trash2, HardDrive, X, RotateCcw, Play, Loader2, Search
 import { Header } from '@/components/layout/Header';
 import { Button } from '@/components/common/Button';
 import { LoadingScreen } from '@/components/common/Spinner';
+import { TrackContextMenu } from '@/components/common/TrackContextMenu';
 import { db } from '@/db/database';
 import { formatFileSize } from '@/utils/format';
 import { downloadManager, useDownloadStore } from '@/services/download/DownloadManager';
 import { useAudioPlayer } from '@/hooks/useAudioPlayer';
+import { useUiStore } from '@/stores/uiStore';
 import type { CachedTrackEntity, DownloadQueueEntity } from '@/db/database';
+import type { Track } from '@/types/models';
 
 type Tab = 'queue' | 'cached';
 
@@ -26,7 +29,9 @@ export function DownloadsPage() {
 
   const activeDownloads = useDownloadStore((state) => state.activeDownloads);
   const isProcessing = useDownloadStore((state) => state.isProcessing);
-  const { play } = useAudioPlayer();
+  const { play, playNext } = useAudioPlayer();
+  const { addToast } = useUiStore();
+  const [contextMenuTrack, setContextMenuTrack] = useState<Track | null>(null);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -190,6 +195,34 @@ export function DownloadsPage() {
     loadData();
   };
 
+  const cachedTrackToTrack = (track: CachedTrackEntity): Track => ({
+    fileId: track.id,
+    messageId: 0,
+    channelId: track.channelId || '',
+    channelName: track.channelName || '',
+    fileName: track.fileName,
+    filePath: '',
+    fileType: 'Audio' as const,
+    fileSize: track.fileSize,
+    order: 0,
+    dateAdded: track.cachedAt.toISOString(),
+    isLocalFile: true,
+    streamUrl: track.streamUrl || '',
+    title: track.title || track.fileName.replace(/\.[^/.]+$/, ''),
+    artist: track.artist,
+    album: track.album,
+    duration: track.duration
+  });
+
+  const handlePlayNext = (track: Track) => {
+    playNext(track);
+    addToast(`"${track.title || track.fileName}" will play next`, 'info');
+  };
+
+  const handleShowContextMenu = (track: CachedTrackEntity) => {
+    setContextMenuTrack(cachedTrackToTrack(track));
+  };
+
   const queueCount = downloads.length + failedDownloads.length;
   const tabs: { key: Tab; label: string }[] = [
     { key: 'queue', label: `Queue (${queueCount})` },
@@ -272,9 +305,19 @@ export function DownloadsPage() {
             tracks={cachedTracks}
             onDelete={handleDeleteCachedTrack}
             onPlay={handlePlayCachedTrack}
+            onLongPress={handleShowContextMenu}
           />
         )}
       </div>
+
+      {/* Context Menu */}
+      {contextMenuTrack && (
+        <TrackContextMenu
+          track={contextMenuTrack}
+          onClose={() => setContextMenuTrack(null)}
+          onPlayNext={handlePlayNext}
+        />
+      )}
     </div>
   );
 }
@@ -416,9 +459,50 @@ interface CachedTracksListProps {
   tracks: CachedTrackEntity[];
   onDelete: (track: CachedTrackEntity) => void;
   onPlay: (track: CachedTrackEntity) => void;
+  onLongPress: (track: CachedTrackEntity) => void;
 }
 
-function CachedTracksList({ tracks, onDelete, onPlay }: CachedTracksListProps) {
+function CachedTracksList({ tracks, onDelete, onPlay, onLongPress }: CachedTracksListProps) {
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressTriggeredRef = useRef(false);
+  const longPressStartPosRef = useRef<{ x: number; y: number } | null>(null);
+
+  const handleLongPressStart = (track: CachedTrackEntity, e: React.TouchEvent | React.MouseEvent) => {
+    longPressTriggeredRef.current = false;
+
+    if ('touches' in e) {
+      longPressStartPosRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    }
+
+    longPressTimerRef.current = setTimeout(() => {
+      longPressTriggeredRef.current = true;
+      onLongPress(track);
+    }, 500);
+  };
+
+  const handleLongPressMove = (e: React.TouchEvent) => {
+    if (longPressStartPosRef.current && longPressTimerRef.current) {
+      const touch = e.touches[0];
+      const deltaX = Math.abs(touch.clientX - longPressStartPosRef.current.x);
+      const deltaY = Math.abs(touch.clientY - longPressStartPosRef.current.y);
+
+      if (deltaX > 10 || deltaY > 10) {
+        if (longPressTimerRef.current) {
+          clearTimeout(longPressTimerRef.current);
+          longPressTimerRef.current = null;
+        }
+        longPressStartPosRef.current = null;
+      }
+    }
+  };
+
+  const handleLongPressEnd = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+    longPressStartPosRef.current = null;
+  };
   if (tracks.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-12 text-slate-400">
@@ -434,7 +518,16 @@ function CachedTracksList({ tracks, onDelete, onPlay }: CachedTracksListProps) {
       {tracks.map((track) => (
         <button
           key={track.id}
-          onClick={() => onPlay(track)}
+          onClick={() => {
+            if (longPressTriggeredRef.current) return;
+            onPlay(track);
+          }}
+          onTouchStart={(e) => handleLongPressStart(track, e)}
+          onTouchMove={handleLongPressMove}
+          onTouchEnd={handleLongPressEnd}
+          onMouseDown={(e) => handleLongPressStart(track, e)}
+          onMouseUp={handleLongPressEnd}
+          onMouseLeave={handleLongPressEnd}
           className="w-full flex items-center gap-4 p-4 hover:bg-slate-800 transition-colors text-left"
         >
           <div className="w-12 h-12 bg-slate-700 rounded-lg flex items-center justify-center shrink-0 overflow-hidden">

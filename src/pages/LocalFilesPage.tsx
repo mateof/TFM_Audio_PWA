@@ -4,6 +4,7 @@ import { Music, Folder, Play, Plus, ChevronRight, Download, Search, SlidersHoriz
 import { Header } from '@/components/layout/Header';
 import { LoadingScreen } from '@/components/common/Spinner';
 import { PlaylistPicker } from '@/components/playlists/PlaylistPicker';
+import { TrackContextMenu } from '@/components/common/TrackContextMenu';
 import { localFilesApi } from '@/services/api/localFiles.api';
 import { useAudioPlayer } from '@/hooks/useAudioPlayer';
 import { useDebounce } from '@/hooks/useDebounce';
@@ -47,7 +48,7 @@ export function LocalFilesPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
   const { addToast, getScrollPosition } = useUiStore();
-  const { play } = useAudioPlayer();
+  const { play, playNext } = useAudioPlayer();
   const activeDownloads = useDownloadStore((state) => state.activeDownloads);
   const completedDownloads = useDownloadStore((state) => state.completedDownloads);
   const clearCompleted = useDownloadStore((state) => state.clearCompleted);
@@ -66,6 +67,12 @@ export function LocalFilesPage() {
   const [folderPath, setFolderPath] = useState<FolderBreadcrumb[]>([]);
   const [selectedTrack, setSelectedTrack] = useState<Track | null>(null);
   const [cachedTrackIds, setCachedTrackIds] = useState<Set<string>>(new Set());
+  const [contextMenuTrack, setContextMenuTrack] = useState<Track | null>(null);
+
+  // Long press refs
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressTriggeredRef = useRef(false);
+  const longPressStartPosRef = useRef<{ x: number; y: number } | null>(null);
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -409,6 +416,53 @@ export function LocalFilesPage() {
     addToast('Added to download queue', 'info');
   };
 
+  // Long press handlers
+  const handleLongPressStart = async (file: ChannelFile, e: React.TouchEvent | React.MouseEvent) => {
+    if (file.category !== 'Audio') return;
+
+    longPressTriggeredRef.current = false;
+
+    if ('touches' in e) {
+      longPressStartPosRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    }
+
+    const track = await fileToTrack(file);
+
+    longPressTimerRef.current = setTimeout(() => {
+      longPressTriggeredRef.current = true;
+      setContextMenuTrack(track);
+    }, 500);
+  };
+
+  const handleLongPressMove = (e: React.TouchEvent) => {
+    if (longPressStartPosRef.current && longPressTimerRef.current) {
+      const touch = e.touches[0];
+      const deltaX = Math.abs(touch.clientX - longPressStartPosRef.current.x);
+      const deltaY = Math.abs(touch.clientY - longPressStartPosRef.current.y);
+
+      if (deltaX > 10 || deltaY > 10) {
+        if (longPressTimerRef.current) {
+          clearTimeout(longPressTimerRef.current);
+          longPressTimerRef.current = null;
+        }
+        longPressStartPosRef.current = null;
+      }
+    }
+  };
+
+  const handleLongPressEnd = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+    longPressStartPosRef.current = null;
+  };
+
+  const handlePlayNext = (track: Track) => {
+    playNext(track);
+    addToast(`"${track.title || track.fileName}" will play next`, 'info');
+  };
+
   const filterOptions: { key: FilterMode; label: string; group?: string }[] = [
     { key: 'audio_folders', label: 'Audio + Folders', group: 'general' },
     { key: 'audio', label: 'All Audio', group: 'general' },
@@ -609,7 +663,16 @@ export function LocalFilesPage() {
               {files.map((file) => (
                 <div
                   key={`${file.category}-${file.id}`}
-                  onClick={() => handleFileClick(file)}
+                  onClick={() => {
+                    if (longPressTriggeredRef.current) return;
+                    handleFileClick(file);
+                  }}
+                  onTouchStart={(e) => handleLongPressStart(file, e)}
+                  onTouchMove={handleLongPressMove}
+                  onTouchEnd={handleLongPressEnd}
+                  onMouseDown={(e) => handleLongPressStart(file, e)}
+                  onMouseUp={handleLongPressEnd}
+                  onMouseLeave={handleLongPressEnd}
                   className="w-full flex items-center gap-4 p-4 hover:bg-slate-800 transition-colors touch-manipulation text-left cursor-pointer"
                 >
                   <div
@@ -687,6 +750,15 @@ export function LocalFilesPage() {
         <PlaylistPicker
           track={selectedTrack}
           onClose={() => setSelectedTrack(null)}
+        />
+      )}
+
+      {/* Context Menu */}
+      {contextMenuTrack && (
+        <TrackContextMenu
+          track={contextMenuTrack}
+          onClose={() => setContextMenuTrack(null)}
+          onPlayNext={handlePlayNext}
         />
       )}
     </div>

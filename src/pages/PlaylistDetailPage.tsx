@@ -4,6 +4,7 @@ import { Play, Shuffle, Download, Music, Trash2, Check, CloudOff, Cloud, WifiOff
 import { Header } from '@/components/layout/Header';
 import { Button } from '@/components/common/Button';
 import { LoadingScreen } from '@/components/common/Spinner';
+import { TrackContextMenu } from '@/components/common/TrackContextMenu';
 import { playlistsApi } from '@/services/api/playlists.api';
 import { useAudioPlayer } from '@/hooks/useAudioPlayer';
 import { useUiStore } from '@/stores/uiStore';
@@ -21,7 +22,7 @@ import type { PlaylistDetail, Track } from '@/types/models';
 export function PlaylistDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { addToast } = useUiStore();
-  const { play, currentTrack, isPlaying } = useAudioPlayer();
+  const { play, playNext, currentTrack, isPlaying } = useAudioPlayer();
   const activeDownloads = useDownloadStore((state) => state.activeDownloads);
   const completedDownloads = useDownloadStore((state) => state.completedDownloads);
   const clearCompleted = useDownloadStore((state) => state.clearCompleted);
@@ -38,6 +39,12 @@ export function PlaylistDetailPage() {
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const [isScrolled, setIsScrolled] = useState(false);
   const [showScrollTop, setShowScrollTop] = useState(false);
+  const [contextMenuTrack, setContextMenuTrack] = useState<Track | null>(null);
+
+  // Long press state
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressTriggeredRef = useRef(false);
+  const touchStartPosRef = useRef<{ x: number; y: number } | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const headerInfoRef = useRef<HTMLDivElement>(null);
 
@@ -313,8 +320,52 @@ export function PlaylistDetailPage() {
   };
 
   const handlePlayTrack = (track: Track, index: number) => {
+    if (longPressTriggeredRef.current) {
+      longPressTriggeredRef.current = false;
+      return;
+    }
     if (!playlist) return;
     play(track, playlist.tracks, index);
+  };
+
+  // Long press handlers
+  const handleLongPressStart = (track: Track, e: React.TouchEvent | React.MouseEvent) => {
+    longPressTriggeredRef.current = false;
+
+    if ('touches' in e) {
+      touchStartPosRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    }
+
+    longPressTimerRef.current = setTimeout(() => {
+      longPressTriggeredRef.current = true;
+      setContextMenuTrack(track);
+    }, 500);
+  };
+
+  const handleLongPressMove = (e: React.TouchEvent) => {
+    if (touchStartPosRef.current && longPressTimerRef.current) {
+      const touch = e.touches[0];
+      const deltaX = Math.abs(touch.clientX - touchStartPosRef.current.x);
+      const deltaY = Math.abs(touch.clientY - touchStartPosRef.current.y);
+      if (deltaX > 10 || deltaY > 10) {
+        clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
+        touchStartPosRef.current = null;
+      }
+    }
+  };
+
+  const handleLongPressEnd = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+    touchStartPosRef.current = null;
+  };
+
+  const handlePlayNext = (track: Track) => {
+    playNext(track);
+    addToast(`"${track.title || track.fileName}" will play next`, 'info');
   };
 
   const handleRemoveTrack = async (track: Track, e: React.MouseEvent) => {
@@ -499,7 +550,13 @@ export function PlaylistDetailPage() {
                   onDragLeave={handleDragLeave}
                   onDrop={(e) => handleDrop(e, index)}
                   onDragEnd={handleDragEnd}
-                  className={`w-full flex items-center gap-3 p-4 transition-all touch-manipulation text-left ${
+                  onTouchStart={(e) => handleLongPressStart(track, e)}
+                  onTouchMove={handleLongPressMove}
+                  onTouchEnd={handleLongPressEnd}
+                  onMouseDown={(e) => handleLongPressStart(track, e)}
+                  onMouseUp={handleLongPressEnd}
+                  onMouseLeave={handleLongPressEnd}
+                  className={`w-full flex items-center gap-3 p-4 transition-all touch-manipulation text-left select-none ${
                     isCurrentTrack ? 'bg-emerald-500/10' : 'hover:bg-slate-800'
                   } ${draggedIndex === index ? 'opacity-50 scale-95' : ''} ${
                     dragOverIndex === index && draggedIndex !== index
@@ -591,6 +648,16 @@ export function PlaylistDetailPage() {
         >
           <ChevronUp className="w-5 h-5 text-white" />
         </button>
+      )}
+
+      {/* Track Context Menu */}
+      {contextMenuTrack && (
+        <TrackContextMenu
+          track={contextMenuTrack}
+          onClose={() => setContextMenuTrack(null)}
+          onPlayNext={handlePlayNext}
+          coverArt={coverArts[contextMenuTrack.fileId]}
+        />
       )}
     </div>
   );

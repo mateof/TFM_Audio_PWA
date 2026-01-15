@@ -31,6 +31,7 @@ interface PlayerState {
   toggleEqualizer: () => void;
   addToQueue: (track: Track) => void;
   addMultipleToQueue: (tracks: Track[]) => void;
+  insertNextInQueue: (track: Track) => void;
   removeFromQueue: (index: number) => void;
   clearQueue: () => void;
   moveInQueue: (fromIndex: number, toIndex: number) => void;
@@ -72,6 +73,14 @@ export const usePlayerStore = create<PlayerState>()(
       toggleEqualizer: () => set((s) => ({ showEqualizer: !s.showEqualizer })),
       addToQueue: (track) => set((s) => ({ queue: [...s.queue, track] })),
       addMultipleToQueue: (tracks) => set((s) => ({ queue: [...s.queue, ...tracks] })),
+      insertNextInQueue: (track) =>
+        set((s) => {
+          // Insert track right after the current track
+          const insertIndex = s.currentIndex + 1;
+          const newQueue = [...s.queue];
+          newQueue.splice(insertIndex, 0, track);
+          return { queue: newQueue };
+        }),
       removeFromQueue: (index) =>
         set((s) => {
           const newQueue = s.queue.filter((_, i) => i !== index);

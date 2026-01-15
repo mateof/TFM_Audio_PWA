@@ -74,6 +74,11 @@ export function useAudioPlayer() {
     await audioPlayer.addMultipleToQueue(tracks);
   }, []);
 
+  // Insert track as next in queue (after current track)
+  const playNext = useCallback((track: Track) => {
+    usePlayerStore.getState().insertNextInQueue(track);
+  }, []);
+
   const clearQueue = useCallback(() => {
     audioPlayer.clearQueue();
   }, []);
@@ -134,6 +139,7 @@ export function useAudioPlayer() {
     stop,
     addToQueue,
     addMultipleToQueue,
+    playNext,
     clearQueue,
     toggleShuffle,
     cycleRepeatMode
